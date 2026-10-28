@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Job Search Dashboard</title>
+<style>
+  :root {
+    --active: #3b82f6;
+    --interview: #f59e0b;
+    --offer: #8b5cf6;
+    --hired: #22c55e;
+    --rejected: #ef4444;
+  }
+  body { font-family: system-ui, sans-serif; background: #f9fafb; margin: 2rem; color: #111827; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2rem; }
+  .cards { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .card { background: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; min-width: 150px; border-left: 4px solid #ccc; }
+  .card h2 { margin: 0; font-size: 2rem; }
+  .card p { margin: 0; font-size: 0.875rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card.active { border-left-color: var(--active); }
+  .card.interview { border-left-color: var(--interview); }
+  .card.offer { border-left-color: var(--offer); }
+  .card.rejected { border-left-color: var(--rejected); }
+  
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+  .chart-card { background: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .chart-card h3 { margin-top: 0; margin-bottom: 1rem; }
+  
+  table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 0.5rem; overflow: hidden; }
+  th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f3f4f6; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) { background: #f9fafb; }
+  
+  .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+  .badge.applied, .badge.active { background: #dbeafe; color: #1e40af; }
+  .badge.interview { background: #fef3c7; color: #92400e; }
+  .badge.offer { background: #ede9fe; color: #5b21b6; }
+  .badge.hired { background: #dcfce7; color: #166534; }
+  .badge.rejected { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Job Search Dashboard</h1>
+    <p>Generated: 2026-10-28</p>
+  </div>
+  
+  <div class="cards">
+    <div class="card">
+      <h2>79</h2><p>Total</p>
+    </div>
+    <div class="card active">
+      <h2>58</h2><p>Active</p>
+    </div>
+    <div class="card interview">
+      <h2>4</h2><p>Interview</p>
+    </div>
+    <div class="card offer">
+      <h2>0</h2><p>Offer</p>
+    </div>
+    <div class="card rejected">
+      <h2>17</h2><p>Rejected/Closed</p>
+    </div>
+  </div>
+
+  <div class="charts">
+    <div class="chart-card">
+      <h3>Funnel Progress</h3>
+      <svg width="100%" height="60" role="img" aria-label="Funnel: 5% progressed past resume screen">
+        <rect width="100%" height="30" y="15" fill="#e5e7eb" rx="5" />
+        <rect width="5%" height="30" y="15" fill="var(--active)" rx="5" />
+        <text x="50%" y="35" fill="white" font-size="14" font-weight="bold" text-anchor="middle">5% to Interview+</text>
+      </svg>
+    </div>
+    <div class="chart-card">
+      <h3>By Sector</h3>
+      <ul>
+        <li>FinTech: 2</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Company</th><th>Role</th><th>Sector</th><th>Channel</th><th>Status</th><th>Notes</th><th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+        <td>2026-10-27</td>
+        <td>OpenAI</td>
+        <td>Android Engineer Applied Foundations</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Strong fit for Identity/Foundations focus; Applied 2026-10-27">Strong fit for Identity/Foundations focus; Applied 2026-10-27</td>
+        <td><a href="https://openai.com/careers/android-engineer-applied-foundations-san-francisco/" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-27</td>
+        <td>Disney</td>
+        <td>Sr Product Software Engineer Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-27</td>
+        <td>Disney</td>
+        <td>Senior Software Developer Build Tooling</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-26</td>
+        <td>The Trade Desk</td>
+        <td>Staff Android Application Engineer, VenturaOS</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="2026-10-26 gmail-sync: Application Received">2026-10-26 gmail-sync: Application Received</td>
+        <td><a href="https://www.linkedin.com/jobs/view/4476844418" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-26</td>
+        <td>TextNow</td>
+        <td>Software Developer - Android (US)</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="2026-10-26 gmail-sync: Application Received">2026-10-26 gmail-sync: Application Received</td>
+        <td><a href="https://www.linkedin.com/jobs/view/4418482800" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-26</td>
+        <td>Capital One</td>
+        <td>Android Mobile Engineer 4 (R1001499)</td>
+        <td>FinTech</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-27 gmail-sync: Rejection based on assessment results (&quot;Thank you for your interest&quot;)">2026-10-27 gmail-sync: Rejection based on assessment results (&quot;Thank you fo...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-23</td>
+        <td>Scout Motors Inc.</td>
+        <td>Senior Staff Software Engineer - Software &amp; Frameworks</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Tailored for Zonal Architecture &amp; SDV patterns">Tailored for Zonal Architecture &amp; SDV patterns</td>
+        <td><a href="https://www.linkedin.com/jobs/view/4468598302" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-23</td>
+        <td>General Motors</td>
+        <td>Staff / Principal Software Engineer - In-Vehicle AI Experiences</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Tailored for Vehicle AI &amp; Google Gemini integration">Tailored for Vehicle AI &amp; Google Gemini integration</td>
+        <td><a href="https://www.linkedin.com/jobs/view/4460797469" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-23</td>
+        <td>Butterfly Network</td>
+        <td>Staff Software Engineer Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Strong match (Hardware/Software bridge &amp; Math background)">Strong match (Hardware/Software bridge &amp; Math background)</td>
+        <td><a href="https://boards.greenhouse.io/butterflynetwork/jobs/8005283003" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-22</td>
+        <td>Waymo</td>
+        <td>Staff Android Engineer, In-Car Experience</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge in_progress">in_progress</span></td>
+        <td title="Applied 2026-10-22">Applied 2026-10-22</td>
+        <td><a href="https://careers.withwaymo.com/jobs?gh_jid=8193298" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-22</td>
+        <td>Ulta Beauty</td>
+        <td>Tech Lead</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="Added via historical gmail sync; 2026-10-22 gmail-sync: Rejection (&quot;Ulta Beauty - Tech Lead Application Status&quot;)">Added via historical gmail sync; 2026-10-22 gmail-sync: Rejection (&quot;Ulta Be...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-22</td>
+        <td>Reddit</td>
+        <td>Staff Android Engineer, Brand Ad Formats</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge in_progress">in_progress</span></td>
+        <td title="Applied 2026-10-22">Applied 2026-10-22</td>
+        <td><a href="https://job-boards.greenhouse.io/reddit/jobs/8127002" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-21</td>
+        <td>Thomson Reuters</td>
+        <td>Lead Software Engineer Mobile App</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="Added via historical gmail sync; 2026-10-21 gmail-sync: Rejection (&quot;JREQ202875 Lead Software Engineer Mobile App&quot;)">Added via historical gmail sync; 2026-10-21 gmail-sync: Rejection (&quot;JREQ202...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>ZipRecruiter</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>TeamSnap</td>
+        <td>Staff Software Engineer (Android)</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge in_progress">in_progress</span></td>
+        <td title="Tailored CV and cover letter drafted">Tailored CV and cover letter drafted</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>SentiLink</td>
+        <td>Founding Mobile Developer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-23 gmail-sync: Rejection; Gap: iOS requirement for founding role">2026-10-23 gmail-sync: Rejection; Gap: iOS requirement for founding role</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>OpenAI</td>
+        <td>Android Engineer Plugin Developer Platform</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="Tailored CV and cover letter drafted; 2026-10-27 gmail-sync: Rejection (&quot;OpenAI Application Update for Franco N Colaizzi&quot;)">Tailored CV and cover letter drafted; 2026-10-27 gmail-sync: Rejection (&quot;Op...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>Coinbase</td>
+        <td>Senior Staff Software Engineer Native Mobile</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-22: Rejected">2026-10-22: Rejected</td>
+        <td><a href="https://www.coinbase.com/careers/positions/8241716?gh_jid=8241716&amp;gh_src=r4rlpx331us" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-20</td>
+        <td>Coinbase</td>
+        <td>Staff Software Engineer (Native Mobile)</td>
+        <td>FinTech</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-22: Rejected">2026-10-22: Rejected</td>
+        <td><a href="https://www.coinbase.com/careers/positions/8241720?gh_jid=8241720&amp;gh_src=r4rlpx331us" target="_blank">Link</a></td>
+    </tr><tr>
+        <td>2026-10-19</td>
+        <td>Reddit</td>
+        <td>Staff Android Engineer, Android Platform</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-19 gmail-sync: Rejection">2026-10-19 gmail-sync: Rejection</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-19</td>
+        <td>Grow Therapy</td>
+        <td>Staff Android Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="Applied 2026-10-19; 2026-10-22 gmail-sync: Rejection (&quot;Thank you for your interest in Grow Therapy&quot;)">Applied 2026-10-19; 2026-10-22 gmail-sync: Rejection (&quot;Thank you for your i...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-17</td>
+        <td>Robinhood</td>
+        <td>Staff Android Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-17: Interview invite; 2026-10-26 gmail-sync: Rejection (&quot;Important information about your application to Robinhood&quot;)">2026-10-17: Interview invite; 2026-10-26 gmail-sync: Rejection (&quot;Important ...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-17</td>
+        <td>Radar</td>
+        <td>Product Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-17</td>
+        <td>Netflix</td>
+        <td>Software Engineer 5 - Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="gmail-sync: Acknowledged application on 2026-10-17">gmail-sync: Acknowledged application on 2026-10-17</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-17</td>
+        <td>Fetch</td>
+        <td>Senior Android Engineer II</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge interview">interview</span></td>
+        <td title="2026-10-17: Interview invite">2026-10-17: Interview invite</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Speechify</td>
+        <td>Team Lead, Android Core Product</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge interview">interview</span></td>
+        <td title="2026-10-15: Interview invite">2026-10-15: Interview invite</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Ramp</td>
+        <td>Mobile Engineer Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Paramount</td>
+        <td>Lead Software Engineer - Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Instacart</td>
+        <td>Staff Android Engineer, Pick &amp; Deliver</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-15: Applied; 2026-10-27 gmail-sync: Rejection (&quot;Thank you for applying for Staff Android Engineer, Pick &amp; Deliver&quot;)">2026-10-15: Applied; 2026-10-27 gmail-sync: Rejection (&quot;Thank you for apply...</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>General Motors</td>
+        <td>Staff Software Engineer - Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Crestron Electronics</td>
+        <td>Lead Android Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-15</td>
+        <td>Carnegie Mellon University</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-10</td>
+        <td>Reddit</td>
+        <td>Android Software Engineer, Consumer Engineering</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="gmail-sync: Rejection">gmail-sync: Rejection</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-04</td>
+        <td>Eight Sleep</td>
+        <td>Software Engineer - Mobile (Android)</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-02</td>
+        <td>PNC</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="Added via historical gmail sync; Hiring freeze until 2027">Added via historical gmail sync; Hiring freeze until 2027</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-01</td>
+        <td>onX</td>
+        <td>Android Engineer 3</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-01</td>
+        <td>Salesforce</td>
+        <td>Staff Prototyping Engineer Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-10-01</td>
+        <td>NPR</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-27</td>
+        <td>YinzCam</td>
+        <td>Sr. Android Developer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge interview">interview</span></td>
+        <td title="2026-10-22: 2nd stage coding interview (Take Home Android Assessment)">2026-10-22: 2nd stage coding interview (Take Home Android Assessment)</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-24</td>
+        <td>Unit21</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-24</td>
+        <td>JPMorgan Chase</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-23</td>
+        <td>Netflix</td>
+        <td>Software Engineer 4 - Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="gmail-sync: Acknowledged application on 2026-09-23">gmail-sync: Acknowledged application on 2026-09-23</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-16</td>
+        <td>Ford Motor Company</td>
+        <td>Staff Android Application Developer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-09-16: Rejected">2026-09-16: Rejected</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-15</td>
+        <td>Reddit</td>
+        <td>Senior Android Engineer, Design System</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="gmail-sync: Rejection">gmail-sync: Rejection</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-09-10</td>
+        <td>Grove Collaborative</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-28</td>
+        <td>Edward Jones</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-27</td>
+        <td>ClassPass</td>
+        <td>Sr Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-25</td>
+        <td>Nextdoor</td>
+        <td>Senior Software Engineer Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-25</td>
+        <td>Meta</td>
+        <td>Software Engineer - Android, Standalone Apps Team</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-25</td>
+        <td>Google</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-25</td>
+        <td>Future</td>
+        <td>Lead Android Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-10-20: Rejected">2026-10-20: Rejected</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-25</td>
+        <td>Anthropic</td>
+        <td>Staff Software Engineer, Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-18</td>
+        <td>GitHub</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-15</td>
+        <td>Huntington</td>
+        <td>Innovation Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-07</td>
+        <td>Bitwarden</td>
+        <td>Staff Android Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-06</td>
+        <td>Toast</td>
+        <td>Staff Software Engineer, Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-06</td>
+        <td>SpotOn</td>
+        <td>Staff Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-05</td>
+        <td>Zillow</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-03</td>
+        <td>Touchlab</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-03</td>
+        <td>Duolingo</td>
+        <td>Android Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-08-03</td>
+        <td>Canary Technologies</td>
+        <td>Senior Mobile Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-07-29</td>
+        <td>Playlist</td>
+        <td>Software Engineer III Android</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge rejected">rejected</span></td>
+        <td title="2026-08-25: Rejected">2026-08-25: Rejected</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-07-13</td>
+        <td>Microsoft</td>
+        <td>Member of Technical Staff</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-27</td>
+        <td>iHerb</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-27</td>
+        <td>SharkNinja</td>
+        <td>Senior Director, Mobile Applications</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-27</td>
+        <td>Fanatics</td>
+        <td>Senior Staff Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge interview">interview</span></td>
+        <td title="2026-10-17: Interview invite">2026-10-17: Interview invite</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-26</td>
+        <td>Block</td>
+        <td>Lead Solutions Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-15</td>
+        <td>Roku</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-15</td>
+        <td>Deloitte</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-02</td>
+        <td>SeatGeek</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-06-01</td>
+        <td>Karoo Health</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-05-29</td>
+        <td>Lime</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-05-25</td>
+        <td>Hims &amp; Hers</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-05-21</td>
+        <td>Osmind</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-05-21</td>
+        <td>Honor</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-04-27</td>
+        <td>Dropbox</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-04-27</td>
+        <td>Centene</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-04-27</td>
+        <td>BigCommerce</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr><tr>
+        <td>2026-04-13</td>
+        <td>RevenueCat</td>
+        <td>Software Engineer</td>
+        <td>—</td>
+        <td>—</td>
+        <td><span class="badge applied">applied</span></td>
+        <td title="Added via historical gmail sync">Added via historical gmail sync</td>
+        <td>—</td>
+    </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

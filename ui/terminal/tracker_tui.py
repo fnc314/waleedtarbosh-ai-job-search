@@ -86,6 +86,44 @@ def get_column_widths(rows, cols_config):
     return widths
 
 def get_archive_dir(row):
+    base = "documents/applications"
+    if os.path.exists(base):
+        c_raw = row.get('company', '').strip()
+        c_norm = re.sub(r'[^a-zA-Z0-9]', '', c_raw).lower()
+        for drop in ['inc', 'llc', 'ltd', 'as', 'corp', 'corporation', 'group']:
+            if c_norm.endswith(drop):
+                c_norm = c_norm[:-len(drop)]
+                
+        matching_comp = None
+        for c in os.listdir(base):
+            cn = re.sub(r'[^a-zA-Z0-9]', '', c).lower()
+            if cn == c_norm or c_norm in cn or cn in c_norm:
+                matching_comp = c
+                break
+        if matching_comp:
+            comp_path = os.path.join(base, matching_comp)
+            roles = [r for r in os.listdir(comp_path) if not r.startswith('.')]
+            if roles:
+                role_raw = row.get('role', '').strip()
+                r_norm = re.sub(r'[^a-zA-Z0-9]', '', role_raw).lower() if role_raw else 'general'
+                matching_role = None
+                for r in roles:
+                    rn = re.sub(r'[^a-zA-Z0-9]', '', r).lower()
+                    if rn == r_norm or r_norm in rn or rn in r_norm:
+                        matching_role = r
+                        break
+                if not matching_role:
+                    matching_role = roles[0]
+                role_path = os.path.join(comp_path, matching_role)
+                dates = [d for d in os.listdir(role_path) if not d.startswith('.')]
+                if dates:
+                    date_raw = row.get('date', '').strip()
+                    if date_raw in dates:
+                        return os.path.join(role_path, date_raw)
+                    return os.path.join(role_path, dates[0])
+                return role_path
+            return comp_path
+
     company = row.get('company', '').lower().strip()
     for drop in ['inc.', 'inc', 'llc', 'ltd', 'a/s', 'corp', 'corporation', 'group']:
         company = company.replace(f' {drop}', '')
