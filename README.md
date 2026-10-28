@@ -144,7 +144,7 @@ Postings are treated as untrusted input (the workflow follows no instructions em
 - **`/rank`** bridges `/scrape` and `/apply`: it batch-scores all newly scraped postings against the fit framework (parallel agents fetch each posting and score the five evaluation dimensions) and returns a ranked shortlist with honest per-job strengths and gaps. Deal-breakers veto, deadlines get urgency flags, dead postings get marked expired. Pick a number and it hands off to the full `/apply` workflow.
 - **`/expand`** enriches your profile by scanning public sources you've already linked in it (GitHub repos, portfolio site, Kaggle, Google Scholar) and looking up syllabi for named courses and certifications. Discovered competencies are added to your profile with a source tag. Useful right after `/setup` to surface skills that documents alone don't make explicit.
 - **`/upskill`** analyzes the gap between your profile and your tracked job postings (or a single posting via `/upskill <URL>`). Produces a prioritized heatmap of skill gaps and a learning plan with web-searched study resources and time estimates. Useful for career planning between applications.
-- **`/html-report`** generates a self-contained HTML dashboard from `job_search_tracker.csv` and the application archives — stat cards, status/sector/channel/funnel charts (inline SVG, no external dependencies), and a filterable applications table. Opens directly in a browser, fully offline. Re-run it any time after `/outcome` adds new entries.
+- **`/html-report`** generates a self-contained HTML dashboard from `job_search_tracker.csv` and the application archives — stat cards, status/sector/channel/funnel charts (inline SVG, no external dependencies), and a filterable applications table. Saved to `reports/` and `ui/web/application-dashboard.html`, which can be served locally via `python3 ui/web/application-dashboard-server.py`. Re-run it any time after `/outcome` adds new entries.
 - **`/add-template`** registers your own CV or cover letter template (LaTeX, Typst, or another toolchain) in place of the stock ones. It captures the template's instructions (source extension, compile command, fonts, style rules, page limit), runs a mandatory test compile, and wires the template into `/apply`. See [Custom templates](#custom-templates) below.
 - **`/add-portal`** generates a job-portal search skill for a job board in your market. It investigates the portal (search URL pattern, result structure, access rules), scaffolds the CLI skill from the same structure as the shipped ones, and test-runs a live query before registering. See [Job search tools](#job-search-tools) below.
 
@@ -195,9 +195,18 @@ ai-job-search/
 │   ├── linkedin/                      # LinkedIn profile export (PDF)
 │   ├── diplomas/                      # Degree certificates and transcripts
 │   ├── references/                    # Reference letters
-│   └── applications/                  # Past application records (<company>_<role>/)
+│   └── applications/                  # Past application records (COMPANY/JOB_TITLE/DATE/)
+├── ui/                                # User Interfaces for Application Tracking
+│   ├── web/                           # Web-based dashboard
+│   │   ├── application-dashboard.html # Interactive HTML dashboard
+│   │   └── application-dashboard-server.py # Lightweight local dashboard server
+│   └── terminal/                      # Terminal-based TUI tracker
+│       ├── tracker_tui.py             # Curses TUI interactive application tracker
+│       └── tui_config.json            # Column layout and display settings
+├── scripts/
+│   ├── generate_report.py             # Generates HTML application dashboard
+│   └── salary_lookup.py               # Salary benchmarking tool (BYO data)
 ├── .github/workflows/ci.yml           # CI: LaTeX smoke compiles, skill lint, CLI typechecks
-├── salary_lookup.py                   # Salary benchmarking tool (BYO data)
 ├── tools/
 │   ├── convert_salary_excel.py        # Convert salary Excel to JSON
 │   ├── lint_skills.py                 # CI lint for skills, commands, settings.json
@@ -209,6 +218,33 @@ ai-job-search/
 ├── job_search_tracker.csv             # Application tracking spreadsheet
 └── SETUP.md                           # Detailed setup guide
 ```
+
+## Application Tracking & Dashboards
+
+Track and visualize your job search pipeline using the built-in terminal and web interfaces:
+
+### Terminal UI Tracker (TUI)
+For fast, keyboard-driven navigation across all applications:
+```bash
+python3 ui/terminal/tracker_tui.py
+```
+- **Navigation:** `j`/`k` or arrow keys to scroll, `Enter` to expand details or view candidate files (resumes, cover letters, `outcome.md`).
+- **Sorting:** Press `1`–`5` to toggle sorting by date, company, status, fit rating, or role.
+- **Outreach Protocols:** Integrates directly with recruiter and peer networking message templates.
+- **Configuration:** Custom column layouts and themes can be customized in `ui/terminal/tui_config.json` or `~/.config/job-tracker/config.json`.
+
+### Web Dashboard & Server
+For a visual overview of pipeline conversion, status counts, and sector breakdowns:
+```bash
+# Start the local dashboard server and open in your default browser:
+python3 ui/web/application-dashboard-server.py
+
+# Or regenerate the static HTML report manually:
+python3 scripts/generate_report.py
+```
+- **Live Local Server:** Quickly spun up with `python3 ui/web/application-dashboard-server.py` (served on `http://127.0.0.1:8000`).
+- **Auto-Regeneration:** Visit `http://127.0.0.1:8000/refresh` or start with `--regenerate` to pull the latest entries from `job_search_tracker.csv`.
+- **Zero External Dependencies:** Built with vanilla HTML/CSS and inline SVGs.
 
 ## How `/apply` works
 

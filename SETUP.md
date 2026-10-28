@@ -284,7 +284,26 @@ Set-Location cover_letters; xelatex cover_<company>_<role>.tex; Set-Location ..
 
 These commands apply to the stock templates (moderncv CV, `cover.cls` cover letter). If you'd rather use your own LaTeX template, run `/add-template` — it captures the template's compile engine, fonts, style rules, and page limit, test-compiles it, and wires it into `/apply`. See the "LaTeX templates" section in the README.
 
-## 8. Pulling upstream updates into your fork
+## 8. Application Tracking & Dashboards
+
+Track and visualize applications recorded in `job_search_tracker.csv`:
+
+### Interactive Terminal TUI
+Run the keyboard-navigable terminal tracker:
+```bash
+python3 ui/terminal/tracker_tui.py
+```
+Use `j`/`k` to navigate, `Enter` to view full dossiers and outreach templates, and `1`–`5` to sort columns. Layout preferences can be tweaked in `ui/terminal/tui_config.json`.
+
+### Web Dashboard & Server
+Launch the local web dashboard server (auto-opens in your browser):
+```bash
+python3 ui/web/application-dashboard-server.py
+```
+- Open `http://127.0.0.1:8000` to review status KPIs, interview conversion funnel, and sector distributions.
+- Visit `http://127.0.0.1:8000/refresh` or run `python3 scripts/generate_report.py` to regenerate the HTML report from the tracker.
+
+## 9. Pulling upstream updates into your fork
 
 Upstream keeps improving the methodology files your fork has personalized, so plan for updates from day one:
 

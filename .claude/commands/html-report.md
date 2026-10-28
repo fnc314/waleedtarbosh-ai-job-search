@@ -4,9 +4,9 @@ Generate a self-contained HTML dashboard from `job_search_tracker.csv` and the a
 
 ## Step 0: Parse Arguments
 
-- No argument → output to `reports/application-dashboard.html`
+- No argument → output to `reports/application-dashboard.html` (and optionally sync to `ui/web/application-dashboard.html` if `ui/web/` exists)
 - A path argument (e.g. `/html-report ~/Desktop/report.html`) → use that path
-- `--open` flag → after writing, tell the user to open the file (cannot open a browser directly)
+- `--open` flag → after writing, tell the user to open the file or spin up `python3 ui/web/application-dashboard-server.py`
 
 Create `reports/` if it does not exist.
 
@@ -115,7 +115,10 @@ Then present:
 
 > **Dashboard generated:** `<output path>`
 >
-> Open it in any browser — no server needed.
+> Open it directly in any browser, or spin up the local preview server:
+> ```bash
+> python3 ui/web/application-dashboard-server.py
+> ```
 >
 > **Summary:**
 > - Total applications: N

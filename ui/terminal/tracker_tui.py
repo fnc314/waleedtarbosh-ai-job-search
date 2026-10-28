@@ -1,9 +1,12 @@
 import csv
-import os
 import curses
-import textwrap
 import json
+import os
+import re
+import textwrap
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 DEFAULT_CONFIG = {
     "columns": [
@@ -31,6 +34,9 @@ def get_config_path():
         app_config_dir.mkdir(parents=True, exist_ok=True)
         return config_file
     except Exception:
+        local_cfg = Path(__file__).parent / "tui_config.json"
+        if local_cfg.exists():
+            return local_cfg
         return Path(__file__).parent / "config.json"
 
 def load_config():
@@ -46,6 +52,20 @@ def load_config():
                 return config
         except Exception:
             pass
+
+    # Fallback to local tui_config.json
+    local_cfg = Path(__file__).parent / "tui_config.json"
+    if local_cfg.exists():
+        try:
+            with open(local_cfg, 'r') as f:
+                config = json.load(f)
+                for key, val in DEFAULT_CONFIG.items():
+                    if key not in config:
+                        config[key] = val
+                return config
+        except Exception:
+            pass
+
     return DEFAULT_CONFIG.copy()
 
 def save_config(config):
@@ -59,6 +79,10 @@ def save_config(config):
 
 def load_data():
     tracker_path = 'job_search_tracker.csv'
+    if not os.path.exists(tracker_path):
+        candidate = REPO_ROOT / 'job_search_tracker.csv'
+        if candidate.exists():
+            tracker_path = str(candidate)
     rows = []
     if os.path.exists(tracker_path):
         with open(tracker_path, 'r', newline='') as f:
@@ -87,6 +111,10 @@ def get_column_widths(rows, cols_config):
 
 def get_archive_dir(row):
     base = "documents/applications"
+    if not os.path.exists(base):
+        candidate = REPO_ROOT / "documents" / "applications"
+        if candidate.exists():
+            base = str(candidate)
     if os.path.exists(base):
         c_raw = row.get('company', '').strip()
         c_norm = re.sub(r'[^a-zA-Z0-9]', '', c_raw).lower()
@@ -173,8 +201,13 @@ def load_detail_lines(row, max_width):
 
     # Outreach section
     try:
-        import json, urllib.parse
-        with open(".claude/skills/job-application-assistant/outreach_protocols.json", "r") as f:
+        import urllib.parse
+        proto_path = ".claude/skills/job-application-assistant/outreach_protocols.json"
+        if not os.path.exists(proto_path):
+            candidate = REPO_ROOT / ".claude" / "skills" / "job-application-assistant" / "outreach_protocols.json"
+            if candidate.exists():
+                proto_path = str(candidate)
+        with open(proto_path, "r") as f:
             protocols = json.load(f)
 
         comp = row.get('company', 'Company')

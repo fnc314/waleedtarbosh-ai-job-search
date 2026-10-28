@@ -1,16 +1,25 @@
 import csv
-import os
 import html
+import os
+import sys
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
-os.makedirs('reports', exist_ok=True)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+tracker_path = 'job_search_tracker.csv'
+if not os.path.exists(tracker_path):
+    candidate = REPO_ROOT / 'job_search_tracker.csv'
+    if candidate.exists():
+        tracker_path = str(candidate)
 
 records = []
-with open('job_search_tracker.csv', 'r') as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        records.append(row)
+if os.path.exists(tracker_path):
+    with open(tracker_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            records.append(row)
 
 for r in records:
     st = r.get('status', '').lower().strip()
@@ -167,5 +176,20 @@ html_out = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-with open('reports/application-dashboard.html', 'w') as f:
-    f.write(html_out)
+output_paths = []
+if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
+    output_paths.append(sys.argv[1])
+else:
+    reports_dir = REPO_ROOT / 'reports'
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    output_paths.append(str(reports_dir / 'application-dashboard.html'))
+    
+    ui_web_dir = REPO_ROOT / 'ui' / 'web'
+    if ui_web_dir.exists():
+        output_paths.append(str(ui_web_dir / 'application-dashboard.html'))
+
+for out_path in output_paths:
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(html_out)
+    print(f"Generated dashboard: {out_path}")

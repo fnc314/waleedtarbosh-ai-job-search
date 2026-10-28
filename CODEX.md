@@ -29,3 +29,7 @@ When you have a link to a job you want to apply for, use this command to evaluat
 > *"Use the `job-search` skill to run the `apply` mode for this link: [insert_job_url_here]"*
 
 If you installed LaTeX in Step 1, you will instantly find ready-to-send PDF files in your `cv/` and `cover_letters/` folders!
+
+### 5. Track Applications (TUI & Web Dashboard)
+- **Terminal UI Tracker:** Launch the interactive keyboard tracker via `python3 ui/terminal/tracker_tui.py` (configured via `ui/terminal/tui_config.json`).
+- **Web Dashboard Server:** Quickly serve and inspect your HTML dashboard with `python3 ui/web/application-dashboard-server.py` (serves `ui/web/application-dashboard.html` at `http://127.0.0.1:8000`).
