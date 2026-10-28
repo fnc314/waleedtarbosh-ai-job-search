@@ -10,7 +10,11 @@ Follow these steps **in order**.
 
 ## Step 0: Prerequisites
 
-Confirm the Gmail MCP tools (`mcp__claude_ai_Gmail__*`) are available. If not, tell the user to connect the Gmail integration (claude.ai Settings → Connectors → Gmail) and stop - do not attempt this via Bash, IMAP, or any other channel.
+Confirm that a Gmail integration is available via either:
+1. Composio Gmail tool (`GMAIL_FETCH_EMAILS`, `GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID`, `GMAIL_LIST_LABELS`, executed via `COMPOSIO_MULTI_EXECUTE_TOOL`), OR
+2. Native Anthropic/Claude Gmail MCP tools (`mcp__claude_ai_Gmail__*` or standard Gmail MCP `list_labels`, `search_threads`, `get_thread`).
+
+If neither is available/active, instruct the user to connect Gmail (either via Composio: `COMPOSIO_MANAGE_CONNECTIONS` or claude.ai Settings → Connectors → Gmail) and stop - do not attempt this via Bash, IMAP, or any unauthorized channel.
 
 ---
 
@@ -37,7 +41,7 @@ Confirm the Gmail MCP tools (`mcp__claude_ai_Gmail__*`) are available. If not, t
 
 Lookback window: `since <date>` argument if given, else `state.last_sync` if set, else `newer_than:30d`.
 
-1. Call `list_labels` and look for a user label whose name suggests job-search email (e.g. contains "job", "application", "career" case-insensitively). Note its `id` if found.
+1. Check labels (`GMAIL_LIST_LABELS` or MCP `list_labels`) and look for a user label whose name suggests job-search email (e.g. contains "job", "application", "career" case-insensitively). Note its `id` if found.
 2. Normalize each open application's company name for matching later (lowercase; strip `inc`, `inc.`, `llc`, `ltd`, `a/s`, `corp`, `corporation`, `group`; strip punctuation; collapse whitespace).
 3. Build a Gmail query combining (with `OR` groups via `{}`):
    - `label:<id>` if a job-search label was found
@@ -48,13 +52,19 @@ Lookback window: `since <date>` argument if given, else `state.last_sync` if set
 
 Example: `newer_than:30d in:inbox ({"Acme Corp" "BigCo"} OR {from:greenhouse.io from:lever.co from:myworkday.com from:ashbyhq.com})`
 
-4. Call `search_threads` with `view: THREAD_VIEW_MINIMAL`, `pageSize: 50`, paginating via `pageToken` until exhausted or results are clearly outside the relevant window.
+4. Execute search:
+   - **Composio**: Call `GMAIL_FETCH_EMAILS` with `query`, `include_payload: false` (or `ids_only: true`), `max_results: 50`, paginating via `page_token` until exhausted or outside the window.
+   - **Claude/Anthropic MCP**: Call `search_threads` with `view: THREAD_VIEW_MINIMAL`, `pageSize: 50`, paginating via `pageToken`.
 
 ---
 
 ## Step 4: Filter to New Messages
 
-For each returned thread, inspect its messages' IDs against `state.processed_message_ids`. Skip a thread entirely if every message in it is already processed. For threads with unprocessed messages, call `get_thread` with `messageFormat: FULL_CONTENT` to get full bodies - **classification in Step 5 must never be based on the snippet/subject alone**, since snippets truncate the exact phrase that distinguishes "we'd like to schedule a call" from "thanks for applying."
+For each returned message/thread, inspect its message ID against `state.processed_message_ids`. Skip any messages already processed. For unprocessed messages, fetch full details:
+- **Composio**: Call `GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID` with `format: "full"` to retrieve MIME structure and body payload.
+- **Claude/Anthropic MCP**: Call `get_thread` with `messageFormat: FULL_CONTENT` to get full bodies.
+
+**Classification in Step 5 must never be based on the snippet/subject alone**, since snippets truncate the exact phrase that distinguishes "we'd like to schedule a call" from "thanks for applying."
 
 ---
 

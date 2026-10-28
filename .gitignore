@@ -96,3 +96,63 @@ upskill/*.md
 # Brainstorm mockups (superpowers visual companion) - never ship
 .superpowers/
 *.zip
+
+# Environment & Secrets (NEVER leak private keys, tokens, or local credentials)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+secrets/
+
+# Assistant & Agent runner local state, plugins, and caches
+.gemini/
+.qwen/
+.composio/
+.recalc_queue
+plugins/
+generated/
+
+# Scraped postings, intermediate HTML, text, and JSON debug dumps
+job*.html
+job*.txt
+openai_job.*
+detail_*.json
+p1_*.json
+fh_*.json
+li_*.json
+*_detail*.txt
+*_detail_wrapped.txt
+*_job_posting.txt
+google_job_posting.txt
+tekgence_detail.txt
+
+# Scratch, ad-hoc, and local helper scripts containing personal paths/data
+bulk_add_tracker.py
+cross_reference.py
+fetch_disney.py
+fetch_resume.py
+fix_cv_layout.py
+fix_final.py
+fix_relocation.py
+generate_samples.py
+organize_docs.py
+update_state.py
+parse_html.py
+parse_html_stdin.py
+standardize_apps.py
+
+# Personal LaTeX samples & build logs
+cv/sample_*.tex
+cover_*.log
+
+# Personal candidate outreach & profile disclosures (populated by /setup)
+.claude/skills/job-application-assistant/01-candidate-profile.md
+.claude/skills/job-application-assistant/02-behavioral-profile.md
+.claude/skills/job-application-assistant/04-job-evaluation.md
+.claude/skills/job-application-assistant/07-interview-prep.md
+.claude/skills/job-application-assistant/outreach_protocols.json
+.claude/skills/job-scraper/search-queries.md
+

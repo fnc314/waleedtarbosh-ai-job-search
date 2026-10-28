@@ -1,0 +1,9 @@
+{
+  "columns": [
+    {"key": "date", "label": "Date", "width": 12},
+    {"key": "company", "label": "Company", "width": 20},
+    {"key": "status", "label": "Status", "width": 12},
+    {"key": "fit_rating", "label": "Fit", "width": 5},
+    {"key": "role", "label": "Role", "width": 0}
+  ]
+}

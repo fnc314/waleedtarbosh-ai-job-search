@@ -50,6 +50,16 @@ Present the evaluation to the user with:
 4. **Salary benchmark** - salary index for the company (if available)
 5. **Overall fit score** and recommendation (strong fit / moderate fit / weak fit)
 
+---
+
+## Step 1.5: ARCHIVE - Persist Evaluation
+
+Once the fit is calculated in Step 1, even before drafting begins, ensure the evaluation is recorded. This prevents data loss if the session is interrupted.
+
+1.  **Application Folder**: Create `documents/applications/<company>_<role>/` if it doesn't exist.
+2.  **Archive Fit**: Write the full evaluation (Skills, Experience, Behavioral, Salary, Score) to `documents/applications/<company>_<role>/outcome.md`. If the file exists, append a "## Initial Fit Evaluation" section.
+3.  **Update Tracker**: If the application exists in `job_search_tracker.csv`, update the `fit_rating` column with the numeric score. If it doesn't exist yet, do not add it yet (wait for the user to proceed to drafting/applying).
+
 After presenting the evaluation, ask the user:
 > "Should I proceed with drafting the CV and cover letter for this role?"
 
