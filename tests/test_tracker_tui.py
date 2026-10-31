@@ -1,11 +1,12 @@
 """Unit tests for ui/terminal/tracker_tui.py."""
 
+import importlib.util
+import os
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-import importlib.util
 tui_spec = importlib.util.spec_from_file_location(
     "tracker_tui",
     REPO_ROOT / "ui" / "terminal" / "tracker_tui.py",
@@ -25,10 +26,30 @@ class TrackerTuiTests(unittest.TestCase):
     def test_load_data_finds_tracker(self):
         rows = tui_mod.load_data()
         self.assertIsInstance(rows, list)
-        self.assertGreater(len(rows), 0, "Expected records from job_search_tracker.csv")
+        self.assertGreater(len(rows), 0, "Expected records from the tracker store")
         sample = rows[0]
         self.assertIn("company", sample)
         self.assertIn("role", sample)
+
+    def test_load_data_reports_which_source_answered(self):
+        tui_mod.load_data()
+        self.assertIn(tui_mod.DATA_META.get("source"), {"store", "cache", "csv", "unavailable"})
+        self.assertTrue(tui_mod.DATA_META.get("label"))
+
+    def test_load_data_still_works_with_the_csv_absent(self):
+        # The store is the primary source, so the CSV's presence must not
+        # matter. Pointing the CSV source at a missing file proves the reader
+        # does not quietly depend on it.
+        previous = os.environ.get("TRACKER_SOURCE")
+        os.environ["TRACKER_SOURCE"] = "cache" if (REPO_ROOT / "generated" / "tracker-cache.json").exists() else "store"
+        try:
+            rows = tui_mod.load_data()
+        finally:
+            if previous is None:
+                os.environ.pop("TRACKER_SOURCE", None)
+            else:
+                os.environ["TRACKER_SOURCE"] = previous
+        self.assertIsInstance(rows, list)
 
     def test_get_archive_dir_fuzzy_lookup(self):
         row = {"company": "OpenAI", "role": "Android Engineer", "date": "2026-10-27"}

@@ -1,4 +1,3 @@
-import csv
 import html
 import os
 import sys
@@ -7,19 +6,16 @@ from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-tracker_path = 'job_search_tracker.csv'
-if not os.path.exists(tracker_path):
-    candidate = REPO_ROOT / 'job_search_tracker.csv'
-    if candidate.exists():
-        tracker_path = str(candidate)
+import reader  # noqa: E402
 
-records = []
-if os.path.exists(tracker_path):
-    with open(tracker_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            records.append(row)
+# The store is authoritative; the cache and the CSV are fallbacks. `reader`
+# reports which one answered, and the dashboard prints it, so a stale snapshot
+# can never be mistaken for the live record.
+records, data_meta = reader.rows()
+provenance = reader.badge(data_meta)
 
 for r in records:
     st = r.get('status', '').lower().strip()
@@ -123,7 +119,7 @@ html_out = f"""<!DOCTYPE html>
 <body>
   <div class="header">
     <h1>Job Search Dashboard</h1>
-    <p>Generated: {datetime.now().isoformat()[:10]}</p>
+    <p>Generated: {datetime.now().isoformat()[:10]} &middot; Source: {html.escape(provenance)}</p>
   </div>
   
   <div class="cards">
@@ -156,7 +152,7 @@ html_out = f"""<!DOCTYPE html>
     <div class="chart-card">
       <h3>By Sector</h3>
       <ul>
-        {''.join(f"<li>{html.escape(s)}: {c}</li>" for s, c in sectors.items())}
+        {''.join(f"<li>{html.escape(s)}: {c}</li>" for s, c in sorted(sectors.items()))}
       </ul>
     </div>
   </div>
@@ -179,6 +175,11 @@ html_out = f"""<!DOCTYPE html>
 output_paths = []
 if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
     output_paths.append(sys.argv[1])
+elif os.environ.get("TRACKER_DASHBOARD_OUTPUT"):
+    # Tests regenerate the dashboard to exercise `/refresh`. Without this
+    # override they would overwrite the tracked copy with output produced under
+    # a throwaway project, which is how a test run silently dirties the repo.
+    output_paths.append(os.environ["TRACKER_DASHBOARD_OUTPUT"])
 else:
     reports_dir = REPO_ROOT / 'reports'
     reports_dir.mkdir(parents=True, exist_ok=True)

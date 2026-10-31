@@ -8,7 +8,7 @@ is authoritative.
 Companion documents: `docs/tracker-migration-plan.md` (design and rationale),
 `tracker.schema.json` (the contract).
 
-**Last updated:** 2026-10-31 (after Phase 2b: import, export, artifacts, cache, tasks, proposals, and the Sheets projection are implemented and green against the emulator)
+**Last updated:** 2026-10-31 (after Phase 4: both consumers read the store through one projection, and the regenerated dashboard is identical to the committed one apart from the provenance line)
 **Update rule:** revised at the end of every phase, including when an implementation decision
 changes the approved scope (see `docs/tracker-migration-plan.md` §16).
 
@@ -16,12 +16,17 @@ changes the approved scope (see `docs/tracker-migration-plan.md` §16).
 
 ## 1. The rule that governs the whole migration period
 
-> **The CSV stays authoritative until Phase 10 declares it retired.**
-> Firestore is a mirror under construction until then.
+> **The CSV stays the write target until Phase 5 ports the writers, and until Phase 10
+> declares it retired.**
+> Firestore now holds a verified snapshot of it — not a live mirror.
+
+**Phase 3 has landed (2026-10-31).** The store holds 84 applications, 84 `event:imported`
+events, and 89 artifact records, and `export --csv` reproduces `job_search_tracker.csv`
+byte-for-byte. That snapshot is accurate *as of the import* and does not update itself.
 
 This matters because every existing workflow (`/apply`, `/outcome`, `/gmail-sync`,
-`bulk_add_tracker.py`) still writes the CSV. If anything writes Firestore directly during
-this window, the two stores diverge and the Phase 3 reconciliation becomes meaningless.
+`bulk_add_tracker.py`) still writes the CSV. **The divergence window is now open:** every
+CSV write after the import makes Firestore stale, and nothing warns you.
 
 Concretely, during the migration period:
 
@@ -30,16 +35,42 @@ Concretely, during the migration period:
 | Add an application | keep using `/apply` and the CSV | hand-writing a Firestore document |
 | Record a status change | keep using `/outcome` and the CSV | calling `tracker.py status` |
 | Run gmail sync | `/gmail-sync` as today, against the CSV | `tracker.py collect` |
-| Inspect what Firestore will look like | `tracker.py import --csv … --dry-run` | importing for real |
+| Inspect what Firestore looks like | `tracker.py list` / `get` / `export` | assuming it matches the CSV |
 
 `tracker.py` commands that **write** (`add`, `upsert`, `status`, `event`, `artifact`,
-`bulk`) refuse to run unless `TRACKER_ALLOW_WRITES=1` is set, and that variable is not set
-during the migration period. Read-only commands (`check`, `list`, `get`, `import
---dry-run`) always work.
+`bulk`, `import`, proposal `approve`) refuse to run unless `TRACKER_ALLOW_WRITES=1` is set.
+Read-only commands (`check`, `list`, `get`, `export`, `sheet --local-only`) always work, and
+`--dry-run` resolves and validates the full document without writing, even when the gate is
+off.
 
 The gate is enforced in one function (`scripts/client.py: assertWritesAllowed`) and covered
-by tests, so it cannot be bypassed by a subcommand that forgets to check. `--dry-run`
-resolves and validates the full document without writing, even when the gate is off.
+by tests, so it cannot be bypassed by a subcommand that forgets to check.
+
+### Closing the divergence without re-importing
+
+A CSV write after the import is not an emergency. Pick one:
+
+1. **Preferred, after Phase 5:** the writer emits a `tracker.py` payload and Firestore is
+   the write target, so there is nothing to reconcile.
+2. **During the window:** re-run the import. It is idempotent — rows whose
+   `event:imported` marker already exists are skipped and reported, so a re-run only adds
+   genuinely new applications, and it never overwrites an existing document.
+
+   ```bash
+   TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py import --csv job_search_tracker.csv
+   ```
+
+   The known limit: a **changed** cell on an already-imported row (a corrected status, an
+   edited note) is **not** picked up, because the document is skipped. Corrections to
+   existing rows go through `tracker.py status` / `event`, which append to the event log
+   instead of rewriting history. Treat the skip report as the list of rows the CSV can no
+   longer teach Firestore anything about.
+
+**The readers guard against this for you.** `scripts/reader.py` compares the CSV's IDs with
+the store's on every load, and when the CSV holds a row the store does not, it serves the
+CSV and labels itself `csv (store behind)` instead of hiding the new application. The
+store takes over again by itself once the row is imported or the writers move. Force a
+source with `TRACKER_SOURCE=store|cache|csv`.
 
 ## 2. What the CSV actually contains
 
@@ -134,34 +165,36 @@ That is a provenance marker, not a status signal. The importer:
 Regex-derived events are additive and advisory. `notesLegacy` remains the record of truth
 for pre-migration history, so a wrong guess is revisable without losing the original.
 
-## 4. Reconciliation checklist (Phase 3 exit gate)
+## 4. Reconciliation checklist (Phase 3 exit gate) — **passed 2026-10-31**
 
-`tracker.py import --csv job_search_tracker.csv --dry-run` must satisfy every line before a
-real import is permitted:
+Verified against the live store after the real import, not just the dry run:
 
-- [ ] 84 documents, 84 unique IDs, 0 duplicates.
-- [ ] Every row's `id` is byte-identical to the CSV `id` (the slug scheme is unchanged, so
+- [x] 84 documents, 84 unique IDs, 0 duplicates.
+- [x] Every row's `id` is byte-identical to the CSV `id` (the slug scheme is unchanged, so
       any mismatch is a bug in the importer, not in the data).
-- [ ] Every `status` maps through `statusMap`; no row falls through to a default.
-- [ ] Every `fit_rating` is an integer in 0–100; none become `null`.
-- [ ] `notesLegacy` is byte-identical to the CSV `notes` cell for all 84 rows.
-- [ ] Exactly 1 `event:imported` per row; 0 events of any other type from the mandatory pass.
-- [ ] 47 `artifact:cv` and 42 `artifact:cover-letter` records: 20 + 20 `localPath`,
-      25 + 20 `driveUrl`, 2 + 2 `externalUrl`.
-- [ ] The 3 rows with an empty `role` produce `role: null` (not `""`, not a placeholder).
-- [ ] The 81 empty `sector`, 82 empty `channel`, and 83 empty `contactPerson` cells produce
-      `null`, not `""`. The two non-empty `channel` labels are mapped explicitly
-      (`Workday (Snap careers)` → `channel:workday`, `MLB careers site` → `channel:other`)
-      and the original text is kept in `metadata.legacyChannel`.
-- [ ] 0 rows produce an invented `status`, `date`, or `company`.
-- [ ] Warnings, not errors, for: 3 rows with no role, 45 absolute Drive paths, 4 Google Docs
-      URLs, and 50 notes containing the boilerplate marker.
+- [x] Every `status` maps through `statusMap`; no row falls through to a default —
+      `applied` 58, `rejected` 21, `interview` 4, `drafting` 1.
+- [x] Every `fit_rating` is an integer in 0–100; none become `null`.
+- [x] `notesLegacy` is byte-identical to the CSV `notes` cell for all 84 rows.
+- [x] Exactly 1 `event:imported` per record (84 total); 0 events of any other type from the
+      mandatory pass. Every `eventId` validated as UUIDv7.
+- [x] 47 `artifact:cv` and 42 `artifact:cover-letter` records: 20 + 20 `localPath`,
+      25 + 20 `driveUrl`, 2 + 2 `externalUrl`. Every `artifactId` validated as UUIDv7.
+- [x] The 3 rows with an empty `role` produce `role: null` (not `""`, not a placeholder).
+- [x] The near-empty columns stay `null`, not `""`. The two non-empty `channel` labels are
+      mapped explicitly (`Workday (Snap careers)` → `channel:workday`,
+      `MLB careers site` → `channel:other`) and the original text is kept in
+      `metadata.legacyChannel`.
+- [x] 0 rows produce an invented `status`, `date`, or `company`.
+- [x] Warnings, not errors: 45 absolute Drive paths, 46 boilerplate-only notes, 3 rows with
+      no role, 2 channel mappings — 96 non-blocking warnings, 0 blocking issues.
 
-Exit gate: the report is printed, reviewed, and only then does the real import run.
-The reviewed copy lives at **`docs/import-reconciliation.md`**; regenerate it with
+**Idempotency:** a second `import` prepared 0 and skipped 84, writing nothing.
+**Rollback:** `export --csv` produced a file with the same SHA-256 as the live CSV
+(`3367ce42…f6ab`, 26,837 bytes) — byte-identical, including CRLF endings and row order.
+
+The reviewed report lives at **`docs/import-reconciliation.md`**; regenerate it with
 `tracker.py import --csv job_search_tracker.csv --dry-run --report docs/import-reconciliation.md`.
-Its emulator run also proves the rollback path: `export --csv` reproduces the live 84-row file
-byte-for-byte, including CRLF line endings and row order (`metadata.importIndex`).
 
 ## 5. Rollback
 
@@ -198,8 +231,8 @@ phase completes.
 | **0–1** *(now)* | nothing changes; keep using `/apply`, `/outcome`, `/gmail-sync` | keep writing the CSV; `tracker.py check` and `import --dry-run` only |
 | **2** — CLI exists *(done)* | still nothing; writes are gated | use `tracker.py` for **reads** (`list`, `get`, `export`) to sanity-check the store; `add/upsert/status/event/artifact --dry-run` are safe because they cannot write |
 | **2b** — import/export/views *(done)* | review the reconciliation report at `docs/import-reconciliation.md` | `import --dry-run` writes that report; `export --csv` is verified byte-identical to the live file in the emulator; `sheet --local-only` previews the view |
-| **3** — import | review the reconciliation report before approving the real import | run `import --dry-run`, paste the report, wait for approval, then import |
-| **4** — readers ported | TUI and dashboard read Firestore; a badge shows cache age when offline | read via the store; if you see stale data, run `tracker.py export --json` to refresh the cache |
+| **3** — import *(done)* | treat Firestore as a **snapshot taken 2026-10-31**, not a live mirror; keep writing the CSV | import verified: 84 applications, 84 `event:imported`, 89 artifacts (40 `localPath`, 45 `driveUrl`, 4 `externalUrl`); re-run skips all 84; `export --csv` byte-identical |
+| **4** — readers ported *(done)* | the TUI header and the dashboard header now show their source (`store (live)`, `cache (…old)`, or `csv (pre-migration)`); set `TRACKER_SOURCE=csv` to force the old behaviour | both consumers read through `scripts/reader.py`; a read failure degrades to cache, then CSV, and the badge says which |
 | **5** — writers ported | **switch:** `/apply` and `/outcome` now emit JSON through `tracker.py`; stop editing the CSV by hand | never open the CSV for writing; emit a JSON payload instead |
 | **6** — collector split | `/gmail-sync` becomes "review the queued proposals" | `collect` stages proposals only; approval emits events |
 | **7** — Sheets | the Sheet is regenerated, never edited | never hand-edit the Sheet; fix the record and re-sync |

@@ -1,7 +1,7 @@
 # Import reconciliation
 
-Generated: 2026-10-31T06:01:50+00:00
-Mode: dry run
+Generated: 2026-10-31T06:11:16+00:00
+Mode: write
 Source: `job_search_tracker.csv`
 
 ## Counts

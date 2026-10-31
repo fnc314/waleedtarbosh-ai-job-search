@@ -10,7 +10,7 @@ Usage:
 Options:
     -p, --port PORT       Port to listen on (default: 8000; auto-increments if busy)
     -b, --host HOST       Host address to bind to (default: 127.0.0.1)
-    -r, --regenerate      Regenerate dashboard HTML from job_search_tracker.csv before starting
+    -r, --regenerate      Regenerate dashboard HTML from the tracker store before starting
     --no-browser          Do not automatically open the browser
     -h, --help            Show this help message and exit
 """
@@ -104,7 +104,7 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 def start_server(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True, regenerate: bool = False):
     if regenerate or not DASHBOARD_FILE.exists():
-        print("Generating latest dashboard from job_search_tracker.csv...")
+        print("Generating latest dashboard from the tracker store...")
         regenerate_dashboard()
 
     actual_port = find_available_port(host, port)

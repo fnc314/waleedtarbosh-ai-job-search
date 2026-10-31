@@ -1,7 +1,10 @@
 """Unit tests for ui/web/application-dashboard-server.py."""
 
+import importlib.util
+import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -11,7 +14,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ui" / "web"))
 
-import importlib.util
 server_spec = importlib.util.spec_from_file_location(
     "application_dashboard_server",
     REPO_ROOT / "ui" / "web" / "application-dashboard-server.py",
@@ -23,6 +25,15 @@ server_spec.loader.exec_module(server_mod)
 class DashboardServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # `/refresh` runs the real generator. Point its output at a temp file so
+        # the test never overwrites the tracked dashboard with output produced
+        # under the throwaway test project.
+        cls._tempdir = tempfile.TemporaryDirectory()
+        cls._previous_output = os.environ.get("TRACKER_DASHBOARD_OUTPUT")
+        os.environ["TRACKER_DASHBOARD_OUTPUT"] = str(
+            Path(cls._tempdir.name) / "application-dashboard.html"
+        )
+
         # Pick an open port
         cls.port = server_mod.find_available_port("127.0.0.1", 9500)
         cls.host = "127.0.0.1"
@@ -37,6 +48,11 @@ class DashboardServerTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
+        if cls._previous_output is None:
+            os.environ.pop("TRACKER_DASHBOARD_OUTPUT", None)
+        else:
+            os.environ["TRACKER_DASHBOARD_OUTPUT"] = cls._previous_output
+        cls._tempdir.cleanup()
 
     def test_find_available_port(self):
         port = server_mod.find_available_port("127.0.0.1", 9600)
@@ -70,7 +86,9 @@ class DashboardServerTests(unittest.TestCase):
         opener = urllib.request.build_opener(NoRedirectHandler)
         url = f"http://{self.host}:{self.port}/refresh"
         req = urllib.request.Request(url)
-        with opener.open(req, timeout=5) as resp:
+        # Regeneration now reads the tracker store, so allow for a few seconds
+        # of network time rather than the instant CSV parse it used to be.
+        with opener.open(req, timeout=60) as resp:
             self.assertEqual(resp.status, 302)
             self.assertTrue(resp.headers.get("Location", "").startswith("/?refreshed="))
 

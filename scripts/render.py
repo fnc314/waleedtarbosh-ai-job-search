@@ -42,10 +42,19 @@ def parseDate(value: str | None) -> dt.datetime | None:
 
 
 def renderNote(event: dict) -> str:
-    """One line per event: `<date> · <type> — <note>`."""
+    """One line per event: `<date> · <type> — <note>`.
+
+    `event:imported` is the exception. It is a provenance marker wrapping the
+    pre-migration prose, not an activity that happened on a day, so decorating it
+    with a date and a type would prepend `2026-10-30 · event:imported — ` to all
+    84 restored records while adding no information. Post-import events keep the
+    full form, so real history is still dated and typed.
+    """
+    note = event.get("note")
+    if event.get("type") == "event:imported":
+        return note or ""
     date = str(event.get("date") or "")[:10]
     line = f"{date}{NOTE_SEPARATOR}{event.get('type', 'event:note-added')}"
-    note = event.get("note")
     if note:
         line += f"{NOTE_DASH}{note}"
     return line
@@ -54,9 +63,10 @@ def renderNote(event: dict) -> str:
 def renderNotes(events: list[dict]) -> str | None:
     """The full human-readable history, oldest first. None when there is none."""
     ordered = eventsModule.chronologically(events)
-    if not ordered:
+    lines = [line for line in (renderNote(event) for event in ordered) if line]
+    if not lines:
         return None
-    return "\n".join(renderNote(event) for event in ordered)
+    return "\n".join(lines)
 
 
 def counters(events: list[dict]) -> dict:

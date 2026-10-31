@@ -1,8 +1,8 @@
-import csv
 import curses
 import json
 import os
 import re
+import sys
 import textwrap
 from pathlib import Path
 
@@ -77,18 +77,31 @@ def save_config(config):
     except Exception:
         pass
 
+def _load_reader():
+    """Import the shared store reader without making the scripts tree a package."""
+    scripts = REPO_ROOT / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import reader  # noqa: PLC0415 - path is configured just above
+    return reader
+
+DATA_META = {"source": "unknown"}
+
 def load_data():
-    tracker_path = 'job_search_tracker.csv'
-    if not os.path.exists(tracker_path):
-        candidate = REPO_ROOT / 'job_search_tracker.csv'
-        if candidate.exists():
-            tracker_path = str(candidate)
-    rows = []
-    if os.path.exists(tracker_path):
-        with open(tracker_path, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                rows.append(row)
+    """Rows come from the tracker store, then the cache, then the CSV.
+
+    The legacy row shape is preserved by `scripts/reader.py`, so every renderer
+    below is unchanged. `DATA_META` records which source answered, and the
+    header shows it: a stale snapshot must never look live.
+    """
+    global DATA_META
+    try:
+        module = _load_reader()
+        rows, meta = module.rows()
+    except Exception as error:  # noqa: BLE001 - a read failure must not crash curses
+        DATA_META = {"source": "unavailable", "label": "unavailable", "error": str(error)}
+        return []
+    DATA_META = {**meta, "label": module.badge(meta)}
     return rows
 
 def get_column_widths(rows, cols_config):
@@ -424,6 +437,9 @@ def main(stdscr):
             # Header
             header_text = f" AI JOB TRACKER | {len(rows)} Apps "
             if is_split: header_text += f"| Focus: {focused_pane} "
+            # Provenance is part of the header, not a hidden status: a stale
+            # cache must never be mistaken for the live record.
+            header_text += f"| {DATA_META.get('label', 'unknown')} "
             safe_addstr(stdscr, 0, 0, header_text.ljust(list_w)[:list_w], c_header)
             
             # Column fitting

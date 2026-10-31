@@ -1,6 +1,6 @@
 # Tracker Migration Plan — CSV → Firestore
 
-**Status:** approved, executing — Phases 0, 1, 2, and 2b complete (import/export verified byte-identical against the emulator); Phase 3's dry run is ready for review
+**Status:** approved, executing — Phases 0, 1, 2, 2b, 3, and 4 complete (84 rows imported; both consumers read the store through one projection); Phases 5–10 remain
 **Owner:** Franco N. Colaizzi
 **Supersedes:** `job_search_tracker.schema.json` v1 (CSV contract), `scripts/export_tracker_json.py`
 **Last updated:** 2026-10-31
@@ -14,7 +14,9 @@
 | 1 | **complete** | `tracker.schema.json` v4, `tests/test_tracker_schema.py` (34 tests), `tests/test_contract.py` (43 tests), `requirements-tracker.txt` |
 | 2 | **complete** | `scripts/{client,contract,events,render,tracker}.py`; subcommands `check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `event`; `tests/test_tracker_cli.py` (39 tests, 13 emulator-backed) |
 | 2b | **complete** | `scripts/{importer,cache,artifacts,tasks,proposals,sheets}.py`; subcommands `artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due`; `tests/test_tracker_modules.py` (47 tests, 10 emulator-backed); `export --csv` byte-identical to the live 84-row file in the emulator |
-| 3–10 | not started | |
+| 3 | **complete** | live import: 84 applications, 84 `event:imported`, 89 artifacts (40 `localPath`, 45 `driveUrl`, 4 `externalUrl`); re-run skipped all 84; `export --csv` byte-identical (SHA-256 `3367ce42…f6ab`) |
+| 4 | **complete** | `scripts/reader.py` (store → cache → CSV, provenance badge); `tracker_tui.py` and `generate_report.py` read through it; regenerated dashboard differs from the committed one only by the `Source: store (live)` line; `tests/test_reader.py` (24 tests) |
+| 5–10 | not started | |
 
 
 ---
@@ -451,7 +453,7 @@ All output is JSON on stdout, diagnostics on stderr, so everything composes with
 
 Implemented: `check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `event`,
 `artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due`.
-Outstanding: nothing in the CLI surface. Phases 3–10 port the readers/writers and
+Outstanding: nothing in the CLI surface. Phases 5–10 port the writers and
 retire the CSV.
 
 ## 10. Automation
@@ -587,8 +589,8 @@ The suite skips itself when `FIRESTORE_EMULATOR_HOST` is unset, so the default
 | **1** | `tracker.schema.json` v4 (v3 → v4 = UUIDv7 identifiers); convention, enum, and contract tests | `tests/test_tracker_schema.py` + `tests/test_contract.py` green — **met 2026-10-31** |
 | **2** | `scripts/{tracker,client,events,render}.py` + the read/write CLI (`check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `event`) | emulator-backed CLI tests green — **met 2026-10-31** (`tests/test_tracker_cli.py`, 39 tests) |
 | **2b** | Remaining modules: `sheets.py`, `artifacts.py` (GCS upload + `sha256`), `cache.py`, `proposals.py`, `tasks.py`; `artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due` | emulator-backed tests for each; `export --csv` reproduces the current CSV byte-for-byte for the 84 rows — **met 2026-10-31** (`tests/test_tracker_modules.py`, 47 tests) |
-| **3** | `import --csv` — idempotent, deterministic IDs, notes → `event:imported` + `notesLegacy` | reconciliation: 84 docs, 0 ID mismatches, every CSV cell accounted for |
-| **4** | Readers: TUI (store read, offline cache, proposals badge, artifacts from subcollection instead of `get_archive_dir()`), `generate_report.py`, `cross_reference.py`, `salary_lookup.py` | `test_tracker_tui.py` passes with the CSV absent |
+| **3** | `import --csv` — idempotent, deterministic IDs, notes → `event:imported` + `notesLegacy` | reconciliation: 84 docs, 0 ID mismatches, every CSV cell accounted for — **met 2026-10-31** (84 apps, 84 events, 89 artifacts; re-run wrote nothing; `export --csv` byte-identical) |
+| **4** | Readers: one projection (`scripts/reader.py`) shared by the TUI, `generate_report.py`, and `cross_reference.py`; provenance badge on both surfaces; `salary_lookup.py` reads its own `salary_data.json` and needed no change | `test_tracker_tui.py` passes with the CSV absent — **met 2026-10-31** (`tests/test_reader.py`, 24 tests; regenerated dashboard identical apart from the source line) |
 | **5** | Writers: `bulk_add_tracker.py` → `tracker.py bulk`; `update_state.py` → `meta/sync`; `.recalc_queue` → `event:fit-recalculated`; all commands emit JSON | no script opens the CSV for writing |
 | **6** | `pending-proposals`, the `collect` split, review loop, TUI badge | a staged proposal can be approved into events end-to-end |
 | **7** | Sheets view + `sync-sheets` on dashboard start and `/refresh` | Sheet matches Firestore row-for-row |
@@ -652,6 +654,12 @@ entries are appended at the end of the phase that produced them.
 | 2026-10-31 | 2b | **Free-text `channel` gets an explicit mapping rule**: known ATS word → that `channel:*`; unknown → `channel:other`; original kept in `metadata.legacyChannel` | two legacy labels (`Workday (Snap careers)`, `MLB careers site`) are not enum values. Dropping them would erase a recorded fact; guessing a channel from a company name would invent one. `channel:other` is the schema's explicit catch-all, and preserving the label keeps the import reversible. | plan §16; migration §4; `scripts/importer.py` |
 | 2026-10-31 | 2b | **Import idempotency is keyed on `event:imported`, probed per candidate subcollection** | a collection-group query on `events.type` needs a new collection-group index; probing only the 84 candidate IDs uses the automatic subcollection index and is cheaper. Document-exists alone is *not* the key, so a hand-created application with a colliding ID is never skipped as "already imported". | `scripts/tracker.py` |
 | 2026-10-31 | 2b | **`collect` consumes a JSON inbox drop; fetching stays delegated** | the plan implies `collect` fetches Gmail. A cron job cannot hold a Composio session, and the deterministic stage must be testable without that credential. `collect --json` (default `generated/gmail-inbox.json`) does matching, classification, and staging deterministically; the `/gmail-sync` flow writes the drop. If the drop is absent, `sync-due` completes the request and reports `staged: false` rather than failing forever. | plan §10; §9; `scripts/proposals.py` |
+| 2026-10-31 | 3 | **The import ran and is the acceptance evidence**: 84 apps / 84 events / 89 artifacts; re-run wrote nothing; `export --csv` byte-identical | the exit gate called for a reviewed dry run before writing. The dry run was reviewed and the real import reproduced it exactly, so the gate is satisfied by measurement rather than by assertion. Nothing was corrected during the write, which is what makes the byte-identity meaningful. | migration §4; plan progress table |
+| 2026-10-31 | 3→5 | **The migration period rule is restated: the CSV is the write target until Phase 5, and Firestore is a dated snapshot, not a live mirror** | the original wording ("Firestore is a mirror under construction") implied the mirror tracked the CSV. It does not: nothing propagates a CSV edit, so the divergence window opened the moment the import committed. Leaving that implicit would have let a `/apply` silently make the store stale with no warning. Re-import is the documented remedy, and its known limit is stated: a changed cell on an already-imported row is skipped, because corrections belong in the event log, not in a document rewrite. | migration §1 |
+| 2026-10-31 | 4 | **Consumers keep the legacy row shape**: `scripts/reader.py` projects the store back to the CSV's 14 columns, and both consumers switch in one line | rewriting the TUI's and the dashboard generator's rendering to a new data model would have been a large, unreviewable change for zero user-visible gain. Projecting instead made the port verifiable: the regenerated `ui/web/application-dashboard.html` is byte-identical to the committed file except for the added provenance line. The reader reports its source and cache age, so "which store answered" is never implicit. | plan §13; migration §6; `scripts/reader.py` |
+| 2026-10-31 | 4 | **Readers detect CSV/store divergence and fall back to the CSV** | porting the readers at Phase 4 while the writers stay on the CSV until Phase 5 leaves a gap: a `/apply` adds a CSV row the store has never seen, and a store-only reader would make that application vanish from both UIs with no warning. Comparing IDs on load is cheap at 84 rows and self-healing; the badge says `csv (store behind)` rather than presenting a stale store as live. | plan §13; migration §1; `scripts/reader.py` |
+| 2026-10-31 | 4 | **The dashboard generator honours `TRACKER_DASHBOARD_OUTPUT`, and the server test sets it** | once `/refresh` reads the store instead of the CSV, the existing test regenerated the tracked `ui/web/application-dashboard.html` under the throwaway test project, so a test run left a cache-backed file in the working tree. Redirecting output keeps the test honest and the repo clean; it also caught that the refresh test's 5-second timeout was too short for a network read. | `scripts/generate_report.py`; `tests/test_dashboard_server.py` |
+| 2026-10-31 | 4 | **`event:imported` no longer decorates its note with `date · type — `**; the 84 live documents were reprojected | the renderer treated the import marker as an activity, so every restored record's `notesRendered` became `2026-10-30 · event:imported — <prose>`. That is noise on 84 of 84 records and it made the dashboard differ from the pre-migration one for no informational gain. `notesRendered` is a derived field by contract, so regenerating it is a projection refresh, not a data edit: no application, event, or artifact document changed, and notes now equal `notesLegacy` exactly until a real post-import event appends a line. | `scripts/render.py`; migration §6 |
 
 ### What a scope change must not do
 
