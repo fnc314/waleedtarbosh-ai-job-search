@@ -58,6 +58,12 @@ REQUIRED_IGNORE_RULES = [
     "documents/applications/**",
     "documents/interview/**",
     "job_search_tracker.csv",
+    # Service-account credentials for the tracker store. A committed key grants
+    # read/write to the only authoritative copy of the application record.
+    "sa.json",
+    "**/sa.json",
+    "**/*serviceAccount*.json",
+    "**/service-account*.json",
 ]
 
 # Negation (re-include) rules the template legitimately ships. .gitignore is

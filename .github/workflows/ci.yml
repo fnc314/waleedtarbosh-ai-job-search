@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: pip install pyyaml
       - run: python tools/lint_skills.py
       - name: Framework version guard (upstream template only)
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: python tools/security_guards.py
 
   python-tests:
@@ -68,7 +68,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
+      # tracker.schema.json contract tests need jsonschema; the tracker's
+      # Google client libraries are imported by tests/test_tracker_schema.py
+      # only indirectly, but pinning them here keeps CI honest about the
+      # interpreter/wheel combination that production actually runs.
+      - run: pip install -r requirements-tracker.txt
       - run: python -m unittest discover -s tests -t . -v
 
   dependency-review:

@@ -1,0 +1,15 @@
+# Runtime dependencies for the tracker store (scripts/tracker.py and friends).
+#
+# Pinned deliberately: this is infrastructure for the only copy of the
+# application record, so an unattended minor-version bump is not acceptable.
+# Python 3.15.2 is pinned in mise.toml and .github/workflows/ci.yml.
+#
+# Verified against Python 3.15.2 on macOS arm64: grpcio 1.85.1 ships a
+# cp315 macosx_10_15_universal2 wheel and google-crc32c 1.9.0 ships cp315,
+# so the only binary dependencies resolve without a compiler.
+
+google-cloud-firestore==2.34.1
+google-cloud-storage==3.17.1
+google-api-python-client==2.201.0
+google-auth==2.62.0
+jsonschema==4.26.0

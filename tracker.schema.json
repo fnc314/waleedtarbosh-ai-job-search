@@ -1,0 +1,670 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fnc314/ai-job-search/tracker.schema.json",
+  "title": "Job Search Tracker",
+  "description": "Single contract for every document in the tracker store. Validates the JSON boundary (what scripts/tracker.py reads and writes); Firestore Timestamps are produced from these ISO strings on write. The enum registry lives ONLY in $defs so it cannot drift from the fields it constrains.",
+
+  "schemaVersion": 4,
+  "x-supersedes": "job_search_tracker.schema.json v1 (CSV row contract)",
+
+  "x-revision-log": [
+    {
+      "version": 3,
+      "note": "Initial contract: typed core, append-only events, namespaced enums."
+    },
+    {
+      "version": 4,
+      "note": "Generated identifiers are UUIDv7 instead of ULID. Application, company, and contact IDs stay derived kebab slugs, so the CSV import map and every existing ID are unchanged. No documents existed under v3, so this required no data migration."
+    }
+  ],
+
+  "x-naming": {
+    "documentKeys": "lowerPascalCase at every nesting level",
+    "enumValues": "namespace:kebab-case, with an optional UPPERCASE qualifier segment",
+    "collectionNames": "kebab-case, plural",
+    "documentIds": "kebab-case slug",
+    "sheetHeaders": "lowerPascalCase, mirroring document keys",
+    "pythonModules": "single lowercase word",
+    "pythonClasses": "PascalCase",
+    "pythonFunctionsAndVariables": "lowerPascalCase",
+    "constants": "UPPER_SNAKE_CASE",
+    "forbidden": ["lower_snake_case identifiers", "leading-capital document keys"]
+  },
+
+  "x-firestore": {
+    "project": "job-search-fnc314-dev",
+    "database": "(default)",
+    "location": "nam5",
+    "collections": {
+      "applications": "current state, one document per application",
+      "pending-proposals": "collector output awaiting human review",
+      "sync-requests": "deferred collection requests (local Cloud Tasks substitute)",
+      "companies": "normalized employer records",
+      "contacts": "recruiters and hiring contacts",
+      "meta": "singleton documents: schema, sync state"
+    },
+    "subcollections": {
+      "applications/events": "append-only status and activity history",
+      "applications/artifacts": "artifact metadata; blobs live in GCS"
+    },
+    "blobBucket": "job-search-fnc314-dev-artifacts",
+    "blobPath": "applications/{id}/{kind}/{filename}"
+  },
+
+  "x-legacy-csv": {
+    "note": "Read-only import map. The CSV is retired at Phase 10 and kept under archive/ for reference. Every rule here was derived by profiling the live file, not assumed.",
+    "header": [
+      "id", "date", "company", "sector", "role", "role_type", "channel",
+      "status", "contact_person", "fit_rating", "notes", "cv_file",
+      "cover_letter_file", "source"
+    ],
+    "fieldMap": {
+      "id": "id",
+      "date": "date",
+      "company": "company",
+      "sector": "sector",
+      "role": "role",
+      "role_type": "roleType",
+      "channel": "channel",
+      "status": "status",
+      "contact_person": "contactPerson",
+      "fit_rating": "fitRating",
+      "notes": "notesLegacy",
+      "cv_file": "artifacts[artifact:cv]",
+      "cover_letter_file": "artifacts[artifact:cover-letter]",
+      "source": "source"
+    },
+    "statusMap": {
+      "drafting": "status:drafting",
+      "applied": "status:applied",
+      "interview": "status:interview",
+      "offer": "status:offer",
+      "hired": "status:hired",
+      "rejected": "status:rejected",
+      "no_response": "status:no-response",
+      "no response": "status:no-response",
+      "offer_declined": "status:offer-declined",
+      "withdrawn": "status:withdrawn"
+    },
+    "artifactPathRule": {
+      "description": "cv_file and cover_letter_file are polymorphic in the historical record. The importer must branch on the prefix and never assume a local file: 4 of 89 populated cells are Google Docs URLs, 45 are absolute Google Drive mount paths, and only 40 are repo-relative.",
+      "httpUrl": "artifacts[].externalUrl",
+      "absolutePath": "artifacts[].driveUrl  (legacy machine-specific Google Drive mount; will not resolve on another machine)",
+      "repoRelativePath": "artifacts[].localPath",
+      "empty": "no artifact record emitted",
+      "missingOnDisk": "still emit the artifact record with localPath set; record the gap in the reconciliation report rather than dropping the reference"
+    },
+    "notesRule": {
+      "description": "Every row has notes, but only 34 of 84 are distinct: 46 rows are exactly the boilerplate 'Added via historical gmail sync' and 50 contain it. The importer must not treat that boilerplate as evidence, and must not invent events from it.",
+      "preserveVerbatimAs": "notesLegacy",
+      "emitEvent": "one event {type: event:imported, derivedFrom: csv-import} carrying the exact text",
+      "regexExtraction": "optional, additive only: dated fragments may additionally produce events marked {derivedFrom: notes-regex, confidence: low}. These are advisory; notesLegacy remains the record of truth for pre-migration history.",
+      "boilerplateValues": ["Added via historical gmail sync"]
+    },
+    "profile": {
+      "capturedAt": "2026-10-31",
+      "rows": 84,
+      "distinctIds": 84,
+      "duplicateIds": 0,
+      "emptyIds": 0,
+      "populated": {
+        "id": 84, "date": 84, "company": 84, "role": 81, "status": 84,
+        "fit_rating": 84, "notes": 84, "cv_file": 47, "cover_letter_file": 42,
+        "source": 16, "sector": 3, "channel": 2, "contact_person": 1, "role_type": 0
+      },
+      "fitRatingRange": [68, 98],
+      "distinctCompanies": 75,
+      "distinctRoles": 58
+    }
+  },
+
+  "type": "object",
+  "required": ["schemaVersion", "enums", "$defs"],
+
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 120
+    },
+    "documentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(--[a-z0-9]+(-[a-z0-9]+)*)?$",
+      "maxLength": 191
+    },
+    "isoTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2}))?$"
+    },
+    "uuidV7": {
+      "type": "string",
+      "description": "Canonically formatted, RFC 4122 variant UUIDv7. Generated locally by contract.newUuid(); never requested from a service, and never namespaced with a prefix because every generated ID already lives in a typed field of a typed document.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+
+    "statusValue": {
+      "type": "string",
+      "description": "Closed funnel vocabulary. Rank and terminality are declared alongside the enum so they cannot drift from it.",
+      "enum": [
+        "status:drafting",
+        "status:applied",
+        "status:interview",
+        "status:offer",
+        "status:hired",
+        "status:rejected",
+        "status:no-response",
+        "status:offer-declined",
+        "status:withdrawn"
+      ],
+      "x-status-rank": {
+        "status:drafting": 0,
+        "status:applied": 1,
+        "status:interview": 2,
+        "status:offer": 3,
+        "status:hired": 4,
+        "status:rejected": 5,
+        "status:no-response": 6,
+        "status:offer-declined": 7,
+        "status:withdrawn": 8
+      },
+      "x-terminal": [
+        "status:hired",
+        "status:rejected",
+        "status:no-response",
+        "status:offer-declined",
+        "status:withdrawn"
+      ]
+    },
+
+    "eventTypeValue": {
+      "type": "string",
+      "enum": [
+        "event:applied",
+        "event:acknowledged",
+        "event:recruiter-screen",
+        "event:interview-scheduled",
+        "event:interview-completed",
+        "event:assessment",
+        "event:onsite",
+        "event:offer",
+        "event:offer-accepted",
+        "event:offer-declined",
+        "event:rejection",
+        "event:no-response",
+        "event:withdrawn",
+        "event:follow-up-sent",
+        "event:document-tailored",
+        "event:fit-recalculated",
+        "event:artifact-added",
+        "event:note-added",
+        "event:imported",
+        "event:status-corrected"
+      ]
+    },
+
+    "channelValue": {
+      "type": "string",
+      "enum": [
+        "channel:greenhouse",
+        "channel:workday",
+        "channel:lever",
+        "channel:ashby",
+        "channel:smartrecruiters",
+        "channel:linkedin",
+        "channel:referral",
+        "channel:direct",
+        "channel:other"
+      ]
+    },
+
+    "artifactKindValue": {
+      "type": "string",
+      "enum": [
+        "artifact:cv",
+        "artifact:cover-letter",
+        "artifact:outcome",
+        "artifact:posting",
+        "artifact:assessment"
+      ]
+    },
+
+    "workModeValue": {
+      "type": "string",
+      "enum": ["work-mode:onsite", "work-mode:hybrid", "work-mode:remote"]
+    },
+
+    "actorValue": {
+      "type": "string",
+      "enum": ["actor:user", "actor:agent", "actor:gmail-sync", "actor:import", "actor:scheduler"]
+    },
+
+    "proposalStateValue": {
+      "type": "string",
+      "enum": ["proposal:pending", "proposal:approved", "proposal:rejected", "proposal:expired"]
+    },
+
+    "proposalKindValue": {
+      "type": "string",
+      "enum": ["proposal:gmail-sync", "proposal:sheet-sync"]
+    },
+
+    "triggerValue": {
+      "type": "string",
+      "enum": [
+        "trigger:cron",
+        "trigger:application-created",
+        "trigger:application-updated",
+        "trigger:manual"
+      ]
+    },
+
+    "syncKindValue": {
+      "type": "string",
+      "enum": ["sync:gmail-collect"]
+    },
+
+    "syncStateValue": {
+      "type": "string",
+      "enum": ["sync:pending", "sync:claimed", "sync:done", "sync:failed"]
+    },
+
+    "confidenceValue": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+
+    "derivedFromValue": {
+      "type": "string",
+      "description": "Provenance. Migrated history is genuinely lossy, so a recovered date must never present as a recorded fact.",
+      "enum": ["manual", "notes-regex", "gmail", "csv-import"]
+    },
+
+    "regionValue": {
+      "type": "string",
+      "description": "Qualifier segment used by location-derived tags, e.g. compensation:above-super-commuter:NYC",
+      "enum": ["PIT", "NYC", "SF", "LA", "DC", "REMOTE-US"]
+    },
+
+    "tagValue": {
+      "type": "string",
+      "description": "Controlled vocabulary. Adding a tag is a schemaVersion bump, deliberately.",
+      "enum": [
+        "relocation:required",
+        "relocation:accepted",
+        "relocation:declined",
+        "compensation:above-super-commuter:NYC",
+        "compensation:above-super-commuter:SF",
+        "compensation:below-nyc-floor",
+        "compensation:below-band",
+        "compensation:at-band",
+        "compensation:above-band",
+        "compensation:equity-heavy",
+        "fit:strong",
+        "fit:stretch",
+        "fit:gap-ios",
+        "fit:gap-cross-platform",
+        "process:take-home",
+        "process:referral",
+        "process:internal-contact",
+        "process:no-response-30d"
+      ]
+    },
+
+    "compensation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": ["number", "null"], "minimum": 0 },
+        "max": { "type": ["number", "null"], "minimum": 0 },
+        "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+        "period": { "type": ["string", "null"], "enum": ["year", "month", "hour", null] },
+        "bandSource": { "$ref": "#/$defs/nullableString" },
+        "vsTarget": { "type": ["string", "null"], "enum": ["below", "at", "above", null] }
+      }
+    },
+
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "city": { "$ref": "#/$defs/nullableString" },
+        "region": { "$ref": "#/$defs/nullableString" },
+        "country": { "$ref": "#/$defs/nullableString" },
+        "workMode": {
+          "oneOf": [{ "$ref": "#/$defs/workModeValue" }, { "type": "null" }]
+        },
+        "relocation": { "type": ["boolean", "null"] },
+        "superCommuter": { "type": ["boolean", "null"] }
+      }
+    },
+
+    "fitEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rubricVersion": { "type": ["integer", "null"], "minimum": 0 },
+        "evaluatedAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        },
+        "gaps": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "events": { "type": "integer", "minimum": 0 },
+        "followUpsSent": { "type": "integer", "minimum": 0 },
+        "interviews": { "type": "integer", "minimum": 0 },
+        "rejections": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "firstActivityAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        },
+        "lastActivityAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        },
+        "daysSinceActivity": { "type": ["integer", "null"], "minimum": 0 },
+        "nextFollowUpAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        }
+      }
+    },
+
+    "application": {
+      "type": "object",
+      "description": "One tracked application. Document ID equals `id`. Unknown top-level keys are rejected: adding a field is an explicit schemaVersion bump.",
+      "additionalProperties": false,
+      "required": ["id", "date", "company", "companyId", "status", "schemaVersion", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/documentId" },
+        "date": { "$ref": "#/$defs/isoTimestamp" },
+        "company": { "$ref": "#/$defs/nonEmptyString" },
+        "companyId": { "$ref": "#/$defs/slug" },
+        "sector": { "$ref": "#/$defs/nullableString" },
+        "role": { "$ref": "#/$defs/nullableString" },
+        "roleType": { "$ref": "#/$defs/nullableString" },
+        "channel": {
+          "oneOf": [{ "$ref": "#/$defs/channelValue" }, { "type": "null" }]
+        },
+        "status": { "$ref": "#/$defs/statusValue" },
+        "statusRank": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "isOpen": { "type": "boolean" },
+        "contactPerson": { "$ref": "#/$defs/nullableString" },
+        "fitRating": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Integer 0-100 from the evaluation rubric. Never a status word, never a string."
+        },
+        "source": { "$ref": "#/$defs/nullableString" },
+        "notesRendered": {
+          "type": ["string", "null"],
+          "description": "DERIVED, read-only. Rendered from events. No writer may set this directly."
+        },
+        "notesLegacy": {
+          "type": ["string", "null"],
+          "description": "Exact pre-migration `notes` blob, preserved verbatim so the migration is lossless even if rendering changes later."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tagValue" },
+          "uniqueItems": true
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Escape hatch for attributes not yet typed. Keys are preserved verbatim; updates merge rather than replace."
+        },
+        "fitEvaluation": { "$ref": "#/$defs/fitEvaluation" },
+        "compensation": { "$ref": "#/$defs/compensation" },
+        "location": { "$ref": "#/$defs/location" },
+        "counters": { "$ref": "#/$defs/counters" },
+        "timeline": { "$ref": "#/$defs/timeline" },
+        "contactIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/documentId" },
+          "uniqueItems": true
+        },
+        "createdAt": { "$ref": "#/$defs/isoTimestamp" },
+        "updatedAt": { "$ref": "#/$defs/isoTimestamp" },
+        "schemaVersion": { "type": "integer", "const": 4 }
+      }
+    },
+
+    "event": {
+      "type": "object",
+      "description": "Append-only. Correct a mistake by emitting a new event, never by editing or deleting an existing one.",
+      "additionalProperties": false,
+      "required": ["eventId", "ts", "date", "type", "actor", "derivedFrom", "confidence"],
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/uuidV7",
+          "description": "UUIDv7: lexicographically sortable by creation time, so the log needs no secondary index to order chronologically."
+        },
+        "ts": { "$ref": "#/$defs/isoTimestamp" },
+        "date": { "$ref": "#/$defs/isoTimestamp" },
+        "type": { "$ref": "#/$defs/eventTypeValue" },
+        "statusFrom": {
+          "oneOf": [{ "$ref": "#/$defs/statusValue" }, { "type": "null" }]
+        },
+        "statusTo": {
+          "oneOf": [{ "$ref": "#/$defs/statusValue" }, { "type": "null" }]
+        },
+        "note": { "$ref": "#/$defs/nullableString" },
+        "actor": { "$ref": "#/$defs/actorValue" },
+        "emailMessageId": { "$ref": "#/$defs/nullableString" },
+        "derivedFrom": { "$ref": "#/$defs/derivedFromValue" },
+        "confidence": { "$ref": "#/$defs/confidenceValue" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "kind", "filename", "createdAt", "source"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/uuidV7" },
+        "kind": { "$ref": "#/$defs/artifactKindValue" },
+        "filename": { "$ref": "#/$defs/nonEmptyString" },
+        "contentType": { "$ref": "#/$defs/nullableString" },
+        "size": { "type": ["integer", "null"], "minimum": 0 },
+        "sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Content hash, used to dedupe re-uploads and detect a silently replaced file."
+        },
+        "storage": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["bucket", "path"],
+          "properties": {
+            "bucket": { "$ref": "#/$defs/nonEmptyString" },
+            "path": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        },
+        "localPath": {
+          "type": ["string", "null"],
+          "description": "Repo-relative path, kept so the TUI can open the local file directly."
+        },
+        "driveUrl": { "$ref": "#/$defs/nullableString" },
+        "externalUrl": { "$ref": "#/$defs/nullableString" },
+        "createdAt": { "$ref": "#/$defs/isoTimestamp" },
+        "source": { "type": "string", "enum": ["generated", "manual", "imported"] }
+      }
+    },
+
+    "proposal": {
+      "type": "object",
+      "description": "Collector output. Never mutates `applications`; only human review does.",
+      "additionalProperties": false,
+      "required": ["proposalId", "createdAt", "dueAt", "kind", "state", "trigger", "scope", "changes"],
+      "properties": {
+        "proposalId": { "$ref": "#/$defs/uuidV7" },
+        "createdAt": { "$ref": "#/$defs/isoTimestamp" },
+        "dueAt": { "$ref": "#/$defs/isoTimestamp" },
+        "collectedAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        },
+        "kind": { "$ref": "#/$defs/proposalKindValue" },
+        "state": { "$ref": "#/$defs/proposalStateValue" },
+        "trigger": { "$ref": "#/$defs/triggerValue" },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "applicationIds": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/documentId" }
+            },
+            "lookbackFrom": {
+              "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+            },
+            "query": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["applicationId", "eventType", "confidence"],
+            "properties": {
+              "applicationId": { "$ref": "#/$defs/documentId" },
+              "eventType": { "$ref": "#/$defs/eventTypeValue" },
+              "statusFrom": {
+                "oneOf": [{ "$ref": "#/$defs/statusValue" }, { "type": "null" }]
+              },
+              "statusTo": {
+                "oneOf": [{ "$ref": "#/$defs/statusValue" }, { "type": "null" }]
+              },
+              "confidence": { "$ref": "#/$defs/confidenceValue" },
+              "sourceEmail": {
+                "type": ["object", "null"],
+                "additionalProperties": false,
+                "properties": {
+                  "messageId": { "$ref": "#/$defs/nonEmptyString" },
+                  "subject": { "$ref": "#/$defs/nullableString" },
+                  "sender": { "$ref": "#/$defs/nullableString" },
+                  "receivedAt": {
+                    "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "unmatched": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sender": { "$ref": "#/$defs/nullableString" },
+              "subject": { "$ref": "#/$defs/nullableString" },
+              "receivedAt": {
+                "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+              },
+              "reason": { "$ref": "#/$defs/nullableString" }
+            }
+          }
+        },
+        "reviewedAt": {
+          "oneOf": [{ "$ref": "#/$defs/isoTimestamp" }, { "type": "null" }]
+        },
+        "reviewedBy": { "$ref": "#/$defs/nullableString" },
+        "resolution": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "syncRequest": {
+      "type": "object",
+      "description": "Local stand-in for Cloud Tasks. The launchd poller claims due requests.",
+      "additionalProperties": false,
+      "required": ["requestId", "createdAt", "dueAt", "kind", "state", "applicationIds", "attempts"],
+      "properties": {
+        "requestId": { "$ref": "#/$defs/uuidV7" },
+        "createdAt": { "$ref": "#/$defs/isoTimestamp" },
+        "dueAt": { "$ref": "#/$defs/isoTimestamp" },
+        "kind": { "$ref": "#/$defs/syncKindValue" },
+        "state": { "$ref": "#/$defs/syncStateValue" },
+        "applicationIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/documentId" }
+        },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "lastError": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "company": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["companyId", "name"],
+      "properties": {
+        "companyId": { "$ref": "#/$defs/slug" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "aliases": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "sector": { "$ref": "#/$defs/nullableString" },
+        "careersUrl": { "$ref": "#/$defs/nullableString" },
+        "notes": { "$ref": "#/$defs/nullableString" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contactId", "name"],
+      "properties": {
+        "contactId": { "$ref": "#/$defs/documentId" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "role": { "$ref": "#/$defs/nullableString" },
+        "companyId": { "oneOf": [{ "$ref": "#/$defs/slug" }, { "type": "null" }] },
+        "linkedinUrl": { "$ref": "#/$defs/nullableString" },
+        "email": { "$ref": "#/$defs/nullableString" },
+        "applicationIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/documentId" }
+        },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    }
+  },
+
+  "enums": {
+    "status": { "$ref": "#/$defs/statusValue" },
+    "eventType": { "$ref": "#/$defs/eventTypeValue" },
+    "channel": { "$ref": "#/$defs/channelValue" },
+    "artifactKind": { "$ref": "#/$defs/artifactKindValue" },
+    "workMode": { "$ref": "#/$defs/workModeValue" },
+    "actor": { "$ref": "#/$defs/actorValue" },
+    "proposalState": { "$ref": "#/$defs/proposalStateValue" },
+    "proposalKind": { "$ref": "#/$defs/proposalKindValue" },
+    "trigger": { "$ref": "#/$defs/triggerValue" },
+    "syncKind": { "$ref": "#/$defs/syncKindValue" },
+    "syncState": { "$ref": "#/$defs/syncStateValue" },
+    "confidence": { "$ref": "#/$defs/confidenceValue" },
+    "derivedFrom": { "$ref": "#/$defs/derivedFromValue" },
+    "region": { "$ref": "#/$defs/regionValue" },
+    "tag": { "$ref": "#/$defs/tagValue" }
+  }
+}

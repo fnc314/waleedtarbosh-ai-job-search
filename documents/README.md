@@ -157,6 +157,8 @@ Any signal about what they valued or didn't?
 
 `in_progress` marks an application that is still open (used by `/outcome` for interview-stage updates before a resolution). `/setup`'s calibration draws conclusions only from applications with a final status.
 
+That `in_progress` value is specific to this file's `Status:` field. `job_search_tracker.csv` uses a separate, closed snake_case vocabulary — `drafting`, `applied`, `interview`, `offer`, `hired`, `rejected`, `no_response`, `offer_declined`, `withdrawn` — defined in `job_search_tracker.schema.json` and enforced by `scripts/export_tracker_json.py`.
+
 Application folders may also contain **`interview_prep_<stage>.md`** files written by `/interview` (one per interview stage, kept as history). `/setup` reads only the four files named above and ignores these.
 
 **What `/setup` learns from outcome.md:**

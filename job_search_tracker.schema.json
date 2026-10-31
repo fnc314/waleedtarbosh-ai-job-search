@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fnc314/ai-job-search/job_search_tracker.schema.json",
+  "title": "Job Search Tracker Row",
+  "description": "Canonical contract for one row of job_search_tracker.csv. The CSV is the source of truth; this schema is enforced by scripts/export_tracker_json.py before any export, and defines the Firestore document shape. Strings are never null in the CSV (empty cell = absent), and become JSON null in the export.",
+  "x-csv-header": [
+    "id",
+    "date",
+    "company",
+    "sector",
+    "role",
+    "role_type",
+    "channel",
+    "status",
+    "contact_person",
+    "fit_rating",
+    "notes",
+    "cv_file",
+    "cover_letter_file",
+    "source"
+  ],
+  "x-firestore-collection": "applications",
+  "x-firestore-doc-id": "id",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "date", "company", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(--[a-z0-9]+(-[a-z0-9]+)*)?$",
+      "maxLength": 191,
+      "description": "Stable primary key and Firestore document ID. Derived as slug(company) + '--' + slug(role), or bare slug(company) when the role is unknown. Deterministic, so it is recoverable if a writer drops the column. Must be unique across all rows.",
+      "x-derived": true
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Application submission date, ISO 8601. This is the anchor for days-quiet calculations, not the date a row was edited."
+    },
+    "company": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Employer display name as written on the posting. Never abbreviated or slugged here; use id for keys."
+    },
+    "sector": {
+      "type": ["string", "null"],
+      "description": "Optional industry label, e.g. FinTech, Healthcare, Retail, Public Sector."
+    },
+    "role": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Role title as posted. Commas are legal but must be quoted in the CSV; an unquoted comma shifts every later column and is the one corruption mode this file has actually suffered. Null only for legacy rows whose title was never recorded (archive folder is 'General', no acknowledgement email); never invented to fill the cell."
+    },
+    "role_type": {
+      "type": ["string", "null"],
+      "description": "Optional sub-classification, e.g. Mobile (Android), Platform, DevEx."
+    },
+    "channel": {
+      "type": ["string", "null"],
+      "description": "How the application was submitted, e.g. Greenhouse, Workday, Lever, LinkedIn, Referral, Direct. Free text so legacy rows stay valid."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "drafting",
+        "applied",
+        "interview",
+        "offer",
+        "hired",
+        "rejected",
+        "no_response",
+        "offer_declined",
+        "withdrawn"
+      ],
+      "description": "Closed set, snake_case. drafting = documents prepared, no submission recorded. Funnel order is defined by x-status-rank.",
+      "x-status-rank": {
+        "drafting": 0,
+        "applied": 1,
+        "interview": 2,
+        "offer": 3,
+        "hired": 4,
+        "rejected": 5,
+        "no_response": 6,
+        "offer_declined": 7,
+        "withdrawn": 8
+      },
+      "x-terminal": ["hired", "rejected", "no_response", "offer_declined", "withdrawn"]
+    },
+    "contact_person": {
+      "type": ["string", "null"],
+      "description": "Named recruiter or hiring contact, when one exists."
+    },
+    "fit_rating": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Fit score from the evaluation framework. Integer, not a string, and never a status word."
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "description": "Append-only free text. Convention: dated entries of the form 'YYYY-MM-DD: event' and 'YYYY-MM-DD gmail-sync: event (\"email subject\")'. Never rewrite or delete prior notes."
+    },
+    "cv_file": {
+      "type": ["string", "null"],
+      "description": "Where the submitted CV lives. Three forms exist in the historical record: repo-relative (documents/applications/...), a legacy absolute path in Google Drive (machine-specific, will not resolve in a web surface), or an external URL (a Google Doc). Consumers must branch on the prefix rather than assume a local file."
+    },
+    "cover_letter_file": {
+      "type": ["string", "null"],
+      "description": "Where the submitted cover letter lives. Same three forms and same prefix rule as cv_file."
+    },
+    "source": {
+      "type": ["string", "null"],
+      "description": "Posting URL when known, otherwise the portal name."
+    }
+  },
+  "x-derived-at-export": {
+    "company_id": "slug(company), for grouping rows into a companies collection",
+    "status_rank": "integer rank from x-status-rank, for stable sorting",
+    "is_open": "status not in x-terminal",
+    "event_dates": "every ISO date found in notes, sorted",
+    "last_activity_date": "max(date, event_dates)",
+    "days_since_activity": "today minus last_activity_date, in whole days",
+    "follow_ups_sent": "count of 'followed up' date markers in notes"
+  }
+}

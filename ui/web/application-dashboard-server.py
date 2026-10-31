@@ -17,7 +17,6 @@ Options:
 
 import argparse
 import http.server
-import os
 import socket
 import socketserver
 import subprocess

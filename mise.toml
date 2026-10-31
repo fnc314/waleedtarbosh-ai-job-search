@@ -1,0 +1,7 @@
+[tools]
+# Pinned to match .github/workflows/ci.yml. The tracker scripts own the only
+# copy of the application record, so the interpreter is not allowed to drift.
+python = "3.15.2"
+
+[env]
+GOOGLE_API_KEY = "***REMOVED***"

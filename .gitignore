@@ -78,6 +78,23 @@ documents/interview/**
 # Personal job search tracking
 job_search_tracker.csv
 
+# Service-account credentials for the tracker store (scripts/tracker.py).
+# These grant read/write to the only authoritative copy of the application
+# record, so a committed key is a full data breach. The canonical location is
+# ~/.config/job-tracker/sa.json; these patterns exist to stop a stray copy.
+sa.json
+**/sa.json
+**/*serviceAccount*.json
+**/service-account*.json
+
+# Local offline read cache (regenerable from Firestore, never authoritative)
+generated/tracker-cache.json
+
+# Firebase CLI and emulator artifacts (firestore-debug.log is already covered by *.log)
+.firebase/
+firestore-debug.log
+ui-debug.log
+
 # Gmail sync state (message IDs, subjects - personal data)
 gmail_sync/
 

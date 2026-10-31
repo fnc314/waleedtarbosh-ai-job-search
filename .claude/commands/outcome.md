@@ -29,8 +29,9 @@ Follow these steps **in order**.
 
 1. Read `job_search_tracker.csv`. If it does not exist, create it with the standard header:
    ```
-   date,company,sector,role,role_type,channel,status,contact_person,fit_rating,notes,cv_file,cover_letter_file,source
+   id,date,company,sector,role,role_type,channel,status,contact_person,fit_rating,notes,cv_file,cover_letter_file,source
    ```
+   Every new row's `id` is derived, never typed by hand: `slug(company)--slug(role)` (lowercase, non-alphanumerics collapsed to `-`), or bare `slug(company)` if the role is unknown. Validate the result with `python3 scripts/export_tracker_json.py --check` after writing.
 2. **With an argument:** match rows case-insensitively on company (and role, if given). One match → proceed. Several → list them and ask. None → the application was made outside the workflow; collect company, role, date applied, channel, and posting URL from the user and add a tracker row.
 3. **Without an argument:** list all rows whose status is not final (not hired / rejected / no response / withdrawn / offer declined) as a numbered table (company, role, date applied, current status, days quiet, follow-ups sent) and ask which to update. The two derived columns come straight from existing data: **days quiet** counts from the row's `date` or the latest dated entry in `notes`, whichever is more recent; **follow-ups sent** counts the `followed up YYYY-MM-DD` markers in `notes`. If any open row is 10+ days quiet with fewer than two follow-ups sent, add one line under the table: "Some of these have gone quiet - want a follow-up draft? (Step 2b)". If every row is resolved, say so and stop.
 4. Derive the archive folder name: `documents/applications/<company>_<role>/` - lowercase, underscores for spaces (the convention documented in `documents/README.md`). Check whether the folder and an `outcome.md` already exist - if so, you are updating, not creating.
@@ -121,7 +122,17 @@ Update rules: tick stage checkboxes as they are reached (add the date in parenth
 
 ## Step 4: Update the Tracker
 
-Update the matched row's `status` column (e.g. `applied` → `interview` → `offer` → `hired` / `rejected` / `no response` / `offer declined` / `withdrawn`) and append a short dated note to the `notes` column. Never restructure the CSV, reorder rows, or touch other rows.
+Update the matched row's `status` column and append a short dated note to the `notes` column. Never restructure the CSV, reorder rows, or touch other rows.
+
+**Canonical `status` vocabulary (snake_case, closed set).** The tracker is exported to Firebase, so a value outside this set is a bug:
+
+`drafting` → `applied` → `interview` → `offer` → `hired` / `rejected` / `no_response` / `offer_declined` / `withdrawn`
+
+- `drafting` means documents were prepared but no submission is recorded. It is not an application yet.
+- Never write `in_progress` to the tracker; that value belongs to `outcome.md`'s own `Status:` field, not to the tracker enum. Use the stage-appropriate value above instead.
+- Values with spaces or capitals (`no response`, `Offer Declined`) are rejected by the schema check; always snake_case.
+
+The full column contract lives in `job_search_tracker.schema.json`.
 
 ---
 
