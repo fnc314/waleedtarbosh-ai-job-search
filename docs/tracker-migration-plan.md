@@ -1,6 +1,6 @@
 # Tracker Migration Plan — CSV → Firestore
 
-**Status:** approved, executing — Phases 0, 1, 2, 2b, 3, and 4 complete (84 rows imported; both consumers read the store through one projection); Phases 5–10 remain
+**Status:** complete — Phases 0–8, 9a, 9b, and 10 landed. Firestore holds the record (84 imported applications), every writer goes through `tracker.py`, the Sheet and dashboard are generated views, the CSV lives in `archive/`, and a 12-hour `launchd` job fetches Gmail and stages proposals for review
 **Owner:** Franco N. Colaizzi
 **Supersedes:** `job_search_tracker.schema.json` v1 (CSV contract), `scripts/export_tracker_json.py`
 **Last updated:** 2026-10-31
@@ -11,12 +11,19 @@
 | phase | state | artifact |
 |---|---|---|
 | 0 | **complete** | project `job-search-fnc314-dev` (Blaze, $5 budget alert), APIs enabled, bucket `gs://job-search-fnc314-dev-artifacts` (US, uniform access, public-access-prevention), SA `tracker@…` with `datastore.user` + bucket-scoped `storage.objectAdmin`, key at `~/.config/job-tracker/sa.json` (600), Firestore `nam5` native + 7-day PITR, deny-all rules and 6 composite indexes deployed, `meta/schema` seeded |
+| env | **complete** | `GOOGLE_API_KEY` moved from `mise.toml` to `.env.local` (gitignored, loaded via `[env] _.file`); `TRACKER_ALLOW_WRITES=1` set there; `.env.example` documents the variables |
 | 1 | **complete** | `tracker.schema.json` v4, `tests/test_tracker_schema.py` (34 tests), `tests/test_contract.py` (43 tests), `requirements-tracker.txt` |
 | 2 | **complete** | `scripts/{client,contract,events,render,tracker}.py`; subcommands `check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `event`; `tests/test_tracker_cli.py` (39 tests, 13 emulator-backed) |
 | 2b | **complete** | `scripts/{importer,cache,artifacts,tasks,proposals,sheets}.py`; subcommands `artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due`; `tests/test_tracker_modules.py` (47 tests, 10 emulator-backed); `export --csv` byte-identical to the live 84-row file in the emulator |
 | 3 | **complete** | live import: 84 applications, 84 `event:imported`, 89 artifacts (40 `localPath`, 45 `driveUrl`, 4 `externalUrl`); re-run skipped all 84; `export --csv` byte-identical (SHA-256 `3367ce42…f6ab`) |
 | 4 | **complete** | `scripts/reader.py` (store → cache → CSV, provenance badge); `tracker_tui.py` and `generate_report.py` read through it; regenerated dashboard differs from the committed one only by the `Source: store (live)` line; `tests/test_reader.py` (24 tests) |
-| 5–10 | not started | |
+| 5 | **complete** | `tracker.py score`; `/apply`, `/outcome`, `/gmail-sync`, `/rank`, `/interview`, `/notion-sync`, `/upskill`, `/html-report`, `/scrape` read/write the store; TUI `r` writes a structured recalc request; `bulk_add_tracker.py` and `update_state.py` deleted; no script or command opens the CSV for writing; `tests/test_tracker_cli.py` +4 emulator tests, `tests/test_tracker_tui.py` +2 |
+| 7 | **complete** | Drive API enabled (to locate the shared file); `TRACKER_SHEET_ID=1na6ir5P…` in `.env.local`; `tracker.py sheet --sync` wrote 3 tabs — Applications 84 rows, Events 84, Summary 13; the default `Sheet1` was removed |
+| 8 | **complete** | `tracker.py backfill` fills `storage`, `sha256`, `size`, `contentType` in place; 61 of 89 artifacts uploaded to `gs://job-search-fnc314-dev-artifacts` (40 `localPath` + 21 Drive-mount files, 20.2 MB), 28 correctly skipped (24 `.gdoc` stubs, 4 `externalUrl`); a second run reuses all 61 and uploads none; `tests/test_tracker_cli.py` +6 path-resolution tests +1 emulator dry-run test |
+| 9a | **complete** | `deploy/launchd/dev.fnc314.tracker-collect.plist` installed as `gui/$UID/dev.fnc314.tracker-collect` (every 15 min, `RunAtLoad`, key path from disk); first run exited 0 with `due: 0`; `sync-due` now leaves requests pending when no inbox payload exists instead of claiming and completing them; `tests/test_tracker_modules.py` +1 emulator test |
+| 6 | **complete** | `/gmail-sync` split into fetch → `collect` → human review; `collect` stages one proposal and writes `meta/sync` (processed ids + Gmail label inventory) only; `proposals approve --only` supports selective review; TUI header shows the pending-review count; `tracker.py labels` exposes the last-seen inventory for `--label` validation; `tests/test_tracker_modules.py` +4 emulator tests, `tests/test_tracker_cli.py` +3 label tests, `tests/test_reader.py` +1 |
+| 10 | **complete** | `.agents/README.md` + `.agents/skills/job-tracker/SKILL.md` are the canonical instructions; each `.<agent>` directory holds one pointer file (`.claude/CLAUDE.md`, `.junie/JUNIE.md`, `.gemini/GEMINI.md`, `.opencode/OPENCODE.md`, `.qwen/QWEN.md`) instead of mirrored command/skill trees; `job_search_tracker.csv`, the retired CSV schema, and `export_tracker_json.py` moved to `archive/` with an `archive/README.md`; `tests/test_export_tracker.py` deleted; `.gitignore` and `tools/security_guards.py` now guard `archive/*.csv`; README/SETUP/documents/AGENTS scrubbed of CSV-era instructions |
+| 9b | **complete** | `scripts/gmail_fetch.py` + `scripts/gmail-fetch.sh` + `deploy/launchd/dev.fnc314.tracker-gmail-fetch.plist` installed as `gui/$UID/dev.fnc314.tracker-gmail-fetch` (every 12 h, `RunAtLoad`): fetch → `collect --trigger trigger:cron` → `sync-due`; fetches in pages of 50 because Composio rejects larger payloads; `collect` now marks every examined message processed so a scheduled run is idempotent; `tests/test_gmail_fetch.py` (13 tests) + 1 emulator idempotency test. Cloud Run/Scheduler was considered and rejected: it would add a credential surface for no benefit on an always-on laptop |
 
 
 ---
@@ -439,35 +446,37 @@ emitted, without writing.
 | `status <id> <status> [--date] [--note]` | emits a status event, updates derived fields |
 | `event <id> --type T --json {...}` | append a timeline event |
 | `artifact <id> --kind K --path P [--no-upload]` | register (and by default upload) a file |
+| `score <id> --fit N` | record a recalculated fit rating |
+| `backfill [--apply]` | add hashes and storage to imported artifacts |
 | `bulk --json <file>` | batch add with per-row validation |
 | `import --csv job_search_tracker.csv [--dry-run]` | one-shot migration |
 | `export [--csv\|--json\|--ndjson] -o PATH` | read back out; the rollback path |
 | `sheet --sync` | regenerate the Sheets view |
 | `proposals list\|show\|approve\|reject` | review the queue |
 | `collect [--dry-run]` | run the unattended Gmail collector |
-| `sync-due` | execute due `sync-requests` (the `launchd` entrypoint) |
+| `sync-due` | execute due `sync-requests` (the `launchd` entrypoint); no-op when the inbox was not fetched |
 | `check` | schema validation; CI gate |
 | `list [--status --tag --open]` / `get <id>` | JSON to stdout |
 
 All output is JSON on stdout, diagnostics on stderr, so everything composes with `jq`.
 
-Implemented: `check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `event`,
-`artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due`.
-Outstanding: nothing in the CLI surface. Phases 5–10 port the writers and
-retire the CSV.
+Implemented: `check`, `seed`, `list`, `get`, `add`, `upsert`, `status`, `score`,
+`event`, `artifact`, `backfill`, `bulk`, `import`, `export`, `sheet`, `proposals`,
+`collect`, `sync-due`. Outstanding: nothing in the CLI surface.
 
 ## 10. Automation
 
 ```
-launchd agent dev.fnc314.tracker-collect   (every 15 min)
+launchd agent dev.fnc314.tracker-gmail-fetch   (every 12 h)
+└── scripts/gmail-fetch.sh
+    ├── gmail_fetch.py        → generated/gmail-inbox.json + gmail-labels.json
+    ├── tracker.py collect --trigger trigger:cron
+    └── tracker.py sync-due
+
+launchd agent dev.fnc314.tracker-collect       (every 15 min)
 └── tracker.py sync-due
     ├── claims due sync-requests → tracker.py collect
     └── deletes completed requests
-
-Cloud Scheduler (optional, undeployed)
-├── gmail-collect        every 6h @ :05
-├── proposals-digest     daily 08:00
-└── nightly-sheets       daily 02:00
 ```
 
 ### The collector / reviewer split
@@ -504,6 +513,33 @@ duplicated, so five writes in ten minutes produce one run.
 When enabled, Cloud Tasks replaces the poller with native `scheduleTime` and named-task
 dedupe. The collector is a plain script either way, so the scheduler is a deployment
 detail, not an architectural one.
+
+### The scheduled fetch
+
+`gmail_fetch.py` is the deterministic half of `/gmail-sync` without an agent: it reads
+the same Composio Gmail connection the manual flow uses and writes the payload `collect`
+already consumed. `gmail-fetch.sh` chains fetch → `collect` → `sync-due`, and
+`dev.fnc314.tracker-gmail-fetch` runs it every 12 hours.
+
+Two rules make the cadence safe:
+
+- **Paged fetches.** Composio answers a single request above ~50 full messages with
+  *"The tool response payload is too large"*, so the fetcher pages 50 at a time up to
+  `--max` (default 200).
+- **Examined means processed.** `collect` records every message it looked at in
+  `meta/sync.gmail.processedMessageIds`, not only the ones that produced a change.
+  Otherwise the same unmatched newsletter would be re-staged every 12 hours. The
+  reason it went unmatched stays in the review table.
+
+`launchd` runs the missed interval on wake, so a closed laptop delays the fetch rather
+than losing it. A failed fetch exits non-zero and stages nothing; the older payload is
+never presented as new. Review remains interactive: the job writes `pending-proposals`
+and never approves one.
+
+Cloud Run was considered for this and rejected. It would require a runtime service
+account with Firestore/GCS access, a Secret Manager entry and accessor for the Composio
+credential, and a Scheduler service account — net-new credentials for a single-user tool
+on the machine already running the job.
 
 **Digest.** The collector cannot notify an LLM. Two surfaces instead: the TUI header gains
 a badge (`AI JOB TRACKER | 84 Apps | 3 PROPOSALS`), and an optional daily digest email via
@@ -591,13 +627,13 @@ The suite skips itself when `FIRESTORE_EMULATOR_HOST` is unset, so the default
 | **2b** | Remaining modules: `sheets.py`, `artifacts.py` (GCS upload + `sha256`), `cache.py`, `proposals.py`, `tasks.py`; `artifact`, `bulk`, `import`, `export`, `sheet`, `proposals`, `collect`, `sync-due` | emulator-backed tests for each; `export --csv` reproduces the current CSV byte-for-byte for the 84 rows — **met 2026-10-31** (`tests/test_tracker_modules.py`, 47 tests) |
 | **3** | `import --csv` — idempotent, deterministic IDs, notes → `event:imported` + `notesLegacy` | reconciliation: 84 docs, 0 ID mismatches, every CSV cell accounted for — **met 2026-10-31** (84 apps, 84 events, 89 artifacts; re-run wrote nothing; `export --csv` byte-identical) |
 | **4** | Readers: one projection (`scripts/reader.py`) shared by the TUI, `generate_report.py`, and `cross_reference.py`; provenance badge on both surfaces; `salary_lookup.py` reads its own `salary_data.json` and needed no change | `test_tracker_tui.py` passes with the CSV absent — **met 2026-10-31** (`tests/test_reader.py`, 24 tests; regenerated dashboard identical apart from the source line) |
-| **5** | Writers: `bulk_add_tracker.py` → `tracker.py bulk`; `update_state.py` → `meta/sync`; `.recalc_queue` → `event:fit-recalculated`; all commands emit JSON | no script opens the CSV for writing |
-| **6** | `pending-proposals`, the `collect` split, review loop, TUI badge | a staged proposal can be approved into events end-to-end |
-| **7** | Sheets view + `sync-sheets` on dashboard start and `/refresh` | Sheet matches Firestore row-for-row |
-| **8** | Artifact backfill to GCS with `sha256` dedupe | storage object count == artifact document count |
-| **9a** | `sync-requests`, `sync-due`, `launchd` plist, dedupe rules | a write produces exactly one deferred collection run |
-| **9b** | *Optional, undeployed:* `Dockerfile`, Cloud Run Job spec, Scheduler + Cloud Tasks config in `deploy/` | documented and reproducible |
-| **10** | Skills + 4 mirrors, scrub 36 files, security guard, CSV → `archive/` | repo contains no reference to the CSV system outside the archive note |
+| **5** | Writers: `bulk_add_tracker.py` → `tracker.py bulk`; `update_state.py` → `meta/sync` (via `collect`); `.recalc_queue` → `tracker.py score` / `event:fit-recalculated`; all commands emit JSON | no script opens the CSV for writing — **met 2026-10-31** (both scripts deleted, every command doc ported) |
+| **6** | `pending-proposals`, the `collect` split, review loop, TUI badge | a staged proposal can be approved into events end-to-end — **met 2026-10-31** (fetch → `collect` → review; `proposals approve --only`; `tracker.py labels`; 4 emulator + 3 label tests) |
+| **7** | Sheets view + `sync-sheets` on dashboard start and `/refresh` | Sheet matches Firestore row-for-row — **met 2026-10-31** (Applications 84 / Events 84 / Summary 13; `Sheet1` removed) |
+| **8** | Artifact backfill to GCS with `sha256` dedupe | storage object count == artifact document count — **met 2026-10-31** (61 uploaded, 28 skipped by design; a re-run is idempotent) |
+| **9a** | `sync-requests`, `sync-due`, `launchd` plist, dedupe rules | a write produces exactly one deferred collection run — **met 2026-10-31** (installed as `gui/$UID/dev.fnc314.tracker-collect`; `sync-due` refuses to consume a request without an inbox payload) |
+| **9b** | Headless fetcher + 12-hour `launchd` fetch: `gmail_fetch.py`, `gmail-fetch.sh`, `dev.fnc314.tracker-gmail-fetch.plist` | an installed job exits 0 and a second run stages nothing new — **met 2026-10-31** (paged 50 at a time; installed run fetched 200 messages, staged 13 changes, `sync-due` clean; 13 fetcher tests) |
+| **10** | Skills + pointer files, doc scrub, security guard, CSV → `archive/` | repo contains no reference to the CSV system outside the archive note — **met 2026-10-31** (canonical instructions in `.agents/`; pointer files only; `archive/*.csv` guarded) |
 
 **Rollback at every phase.** The importer only reads the CSV. `tracker.py export --csv`
 regenerates the original file. The CSV is never modified in place until Phase 10.
@@ -613,7 +649,7 @@ regenerates the original file. The CSV is never modified in place until Phase 10
 | Composio cannot manage Firestore/GCS/schema | it was never intended to; the service account covers all of it. Composio is used only for Gmail |
 | A future agent bypasses the CLI | `security_guards.py` fails CI on any new CSV write path; `SKILL.md` states the invariant |
 | Cloud secrets sprawl | no cloud secrets in the default path; the collector runs under `launchd` with the local key |
-| `mise.toml` holds a plaintext `GOOGLE_API_KEY` | untracked today; move to `.env.local` during Phase 10 |
+| `mise.toml` held a plaintext `GOOGLE_API_KEY` | **closed 2026-10-31:** moved to `.env.local` (gitignored), which mise loads via `[env] _.file`; `.env.example` documents the variables. The leaked key was **revoked in Google Cloud** and replaced in project `job-search-fnc314-dev`. History was rewritten with `git-filter-repo --replace-text` and verified: no `AIza` string exists in any blob or commit. |
 
 ## 15. Decision log
 
@@ -659,6 +695,25 @@ entries are appended at the end of the phase that produced them.
 | 2026-10-31 | 4 | **Consumers keep the legacy row shape**: `scripts/reader.py` projects the store back to the CSV's 14 columns, and both consumers switch in one line | rewriting the TUI's and the dashboard generator's rendering to a new data model would have been a large, unreviewable change for zero user-visible gain. Projecting instead made the port verifiable: the regenerated `ui/web/application-dashboard.html` is byte-identical to the committed file except for the added provenance line. The reader reports its source and cache age, so "which store answered" is never implicit. | plan §13; migration §6; `scripts/reader.py` |
 | 2026-10-31 | 4 | **Readers detect CSV/store divergence and fall back to the CSV** | porting the readers at Phase 4 while the writers stay on the CSV until Phase 5 leaves a gap: a `/apply` adds a CSV row the store has never seen, and a store-only reader would make that application vanish from both UIs with no warning. Comparing IDs on load is cheap at 84 rows and self-healing; the badge says `csv (store behind)` rather than presenting a stale store as live. | plan §13; migration §1; `scripts/reader.py` |
 | 2026-10-31 | 4 | **The dashboard generator honours `TRACKER_DASHBOARD_OUTPUT`, and the server test sets it** | once `/refresh` reads the store instead of the CSV, the existing test regenerated the tracked `ui/web/application-dashboard.html` under the throwaway test project, so a test run left a cache-backed file in the working tree. Redirecting output keeps the test honest and the repo clean; it also caught that the refresh test's 5-second timeout was too short for a network read. | `scripts/generate_report.py`; `tests/test_dashboard_server.py` |
+| 2026-10-31 | 5 | **New `score` subcommand** (`--fit 0-100`), emitting `event:fit-recalculated` and storing the previous rating in `metadata.previousFitRating` | `.recalc_queue` was a raw CSV-row dump, so its consumer had to re-derive the application from free text; a fit change also had no history, which made a recalculation indistinguishable from an overwrite. Making it a command gives the write one validation path and the change an auditable event. The rating stays a direct field because it is an input to the record, not a projection of the log. | plan §12; `.claude/commands/apply.md` |
+| 2026-10-31 | 5 | **The TUI queues a structured request; it does not write** | the TUI cannot compute a score (that is the evaluation rubric), and it must not hold write credentials. It now writes `{schemaVersion, kind: "fit-recalculation", requestedAt, applicationId, company, role, currentFitRating}` to `.recalc_queue`, which a resolve step turns into `tracker.py score`. Keeps the split the collector already uses: stage, then let a write path commit. | `ui/terminal/tracker_tui.py` |
+| 2026-10-31 | 5 | **Read-side command docs were ported in Phase 5, pulled forward from Phase 10** | Phase 5 moved the writers, so leaving `/rank`, `/interview`, `/notion-sync`, `/upskill`, `/html-report`, and `/scrape` reading the CSV would have frozen their view at the 2026-10-31 snapshot the moment the first post-migration write landed. That is a silent correctness bug, not a cosmetic scrub, so the read references moved with the writers. Phase 10 still owns the prose cleanup and the CSV's removal. | plan §12; `docs/tracker-migration.md` §1 |
+| 2026-10-31 | 5 | **The write-gate message no longer says the CSV is authoritative** | with the writers ported, the old message described a world that no longer exists and would have told a future maintainer to keep writing the CSV. The gate itself is kept: writes stay opt-in so an accidental or agent-driven mutation cannot silently rewrite an append-only history. | `scripts/client.py` |
+| 2026-10-31 | env | **Secrets moved to `.env.local`, loaded by mise; the write gate is now explicit in the environment** | `mise.toml` is tracked and held a live `GOOGLE_API_KEY`, so the file could not be committed safely. `.env.local` is gitignored and holds the key plus `TRACKER_ALLOW_WRITES=1`; `[env] _.file` keeps a single loading mechanism instead of a second dotenv layer. Removing the key from HEAD does not remove it from history, so it was rotated and revoked, and history was rewritten with `git-filter-repo`; the open item is now closed, not deferred. | `mise.toml`; `.env.example`; plan §14 |
+| 2026-10-31 | 7 | **The Sheet was located by the service account, not supplied by hand; the Drive API had to be enabled for that** | `TRACKER_SHEET_ID` was never recorded, and the Sheets scope cannot list files. Rather than ask the user to copy an id, the SA listed its visible spreadsheets with `drive.metadata.readonly`; that required enabling `drive.googleapis.com` on the project, which was done and is reversible. The found file (`Job Tracker`) already had the service account as Editor, so no sharing change was needed. The default empty `Sheet1` tab was deleted so the view contains only the three generated tabs. | plan §7; `.env.local` |
+| 2026-10-31 | 8 | **Backfill updates existing artifacts instead of registering new ones, and skips `.gdoc` stubs** | re-registering would have created a second artifact per file and, worse, a fake `event:artifact-added` in an append-only history for something that was already there. In-place merge keeps the imported provenance (`source: imported`) and just adds the content facts. A `.gdoc` is a shortcut to a Google Doc, so uploading its bytes would store a pointer and lose the document; the 24 stubs and 4 `externalUrl` records therefore stay blob-less by design. `ensureUpload` makes the run idempotent and refuses to overwrite a blob whose recorded hash differs, so a silently replaced file is an error rather than a lost submission. | `scripts/artifacts.py`; `scripts/tracker.py` |
+| 2026-10-31 | 9a | **`sync-due` will not consume a request when no inbox payload exists** | the first cron design claimed a due request and called `collect`, which returns "no inbox payload" when the managed fetch has not run. Completing on that result would mark the 2-hour backlog as handled while nothing was read. It now checks the payload first and leaves the request pending, attempts untouched, so a late fetch still gets its run. **Scope note:** `collect` does not fetch Gmail — fetching stays with the agentic `/gmail-sync` step — so the backlog only advances after a fetch writes `generated/gmail-inbox.json`. Wiring a headless fetcher is a separate decision, recorded for approval rather than assumed. | `scripts/tracker.py`; `deploy/launchd/` |
+| 2026-10-31 | 6 | **Gmail scopes are stored, not hard-coded** | the default fetch covers Primary, Updates, `JOBS`, and `JOBS/*`. Gmail has no sub-label wildcard, so the only way to expand `JOBS/*` is to know the labels — and a hard-coded list would silently stop seeing a label the user adds later. `collect --labels` stores the inventory in `meta/sync.gmail.labels`; `tracker.py labels` reads it; `/gmail-sync --label` enumerates against it and refuses an unknown value instead of guessing. Freeform was the fallback, but enumeration was cheap once the inventory had a home. | `.claude/commands/gmail-sync.md`; `scripts/tracker.py` |
+| 2026-10-31 | 8 | **Backfill never rewrites a differing blob** | an artifact whose local bytes no longer match its recorded `sha256` is an error, not a silent re-upload. Re-uploading would let an edited file quietly replace the copy that matched an application, and the record would still claim the old hash. `ensureUpload` is idempotent on matching hashes and raises on a mismatch, so backfill is safe to re-run. `.gdoc` shortcuts and `externalUrl` records are skipped by design — a Google Docs URL is not a file to copy into a bucket. | `scripts/artifacts.py`; `scripts/tracker.py` |
+| 2026-10-31 | 10 | **One shared instruction tree, one pointer per agent** | mirroring commands and skills into `.claude`, `.junie`, `.gemini`, `.opencode`, `.qwen`, and `plugins/` produced three divergent copies of the tracker instructions within a single migration. The fix is structural: `.agents/` holds the canonical skills, `.claude/commands/` holds the one implementation of the workflows, and each agent directory contains a single `<AGENT_NAME>.md` that points there. Copies cannot drift because they no longer exist. | `.agents/README.md`; `.agents/skills/job-tracker/SKILL.md`; `.<agent>/<AGENT_NAME>.md` |
+| 2026-10-31 | 10 | **The CSV moves to `archive/`, not to a tracked `data/` folder** | deleting it would discard the only pre-migration artifact; keeping it at the repo root leaves a file that every reader and doc can accidentally treat as live. `archive/` plus an `archive/README.md` states what the files are, and `.gitignore`/`tools/security_guards.py` guard `archive/*.csv` so personal data still never enters git. The retired CSV schema and exporter moved with it rather than being deleted, because they document what the old cells meant. | `archive/`; `.gitignore`; `tools/security_guards.py` |
+| 2026-10-31 | 6 | **`collect` filters against `meta/sync`, not a local state file** | the pre-migration `gmail_sync/state.json` was per-machine and would have been lost on a new laptop. Processed message ids now live beside the collector watermark in `meta/sync`, so a re-fetch on any machine is idempotent. | `scripts/tracker.py`; `scripts/proposals.py` |
+| 2026-10-31 | 6 | **Selective review is `proposals approve --only 1,3`** | the original approval applied a whole proposal, which forced an all-or-nothing reply and contradicted the review UX. The flag filters changes before any event is prepared; unselected rows are reported in `skipped`. The proposal still has one resolution, so no new schema field was needed. | `scripts/proposals.py`; `scripts/tracker.py` |
+| 2026-10-31 | 6 | **`collect` and `sync-due` are behind the write gate too** | they write `pending-proposals` and `meta/sync`, which are not application history but are still record-adjacent. Applying the same opt-in keeps one rule for every writer; the launchd plist sets it explicitly. `collect --dry-run` and `labels` stay read-only. | `scripts/tracker.py` |
+| 2026-10-31 | 9a | **The collector runs under `launchd`, not Cloud Run/Scheduler** | the machine is already on and holds the service-account key, so a user agent adds no new credential surface or cost. The plist reads `TRACKER_SA_KEY` from disk and sets only the write opt-in, so no secret is copied into a tracked file. Cloud Run stays documented as the optional 9b path and is undeployed. | `deploy/launchd/dev.fnc314.tracker-collect.plist` |
+| 2026-10-31 | 9b | **The scheduled fetch is a second `launchd` agent, not Cloud Run** | 9a left the 2-hour backlog with no way to advance on its own, because `collect` never fetches. A 12-hour agent closing that loop needs a headless fetcher and nothing else — no new credentials beyond the two already on disk (tracker SA, Composio login). Cloud Run would add a runtime SA, a Secret Manager entry/accessor, and a Scheduler SA for a job that runs on the laptop anyway. | `deploy/launchd/dev.fnc314.tracker-gmail-fetch.plist`; `scripts/gmail_fetch.py`; `scripts/gmail-fetch.sh`; plan §10 |
+| 2026-10-31 | 9b | **`collect` marks every examined message processed, not only matched ones** | a 12-hour run makes "unmatched" repeat forever: the same newsletters and low-signal alerts would be re-examined and re-listed on every run because only changes were recorded. Recording the whole examined batch makes the run idempotent; the reason a message produced no change is still in the review table, so nothing is hidden. | `scripts/tracker.py`; `tests/test_tracker_modules.py` |
+| 2026-10-31 | 9b | **Fetches page at 50 messages** | Composio rejects a single response far above 50 full messages ("The tool response payload is too large"), which made the installed job fail on its first run. Paging at 50 and stopping at `--max` keeps every request under the cap while still covering a 30-day backfill. | `scripts/gmail_fetch.py`; `tests/test_gmail_fetch.py` |
 | 2026-10-31 | 4 | **`event:imported` no longer decorates its note with `date · type — `**; the 84 live documents were reprojected | the renderer treated the import marker as an activity, so every restored record's `notesRendered` became `2026-10-30 · event:imported — <prose>`. That is noise on 84 of 84 records and it made the dashboard differ from the pre-migration one for no informational gain. `notesRendered` is a derived field by contract, so regenerating it is a projection refresh, not a data edit: no application, event, or artifact document changed, and notes now equal `notesLegacy` exactly until a real post-import event appends a line. | `scripts/render.py`; migration §6 |
 
 ### What a scope change must not do

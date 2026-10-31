@@ -44,7 +44,7 @@ import sheets  # noqa: E402
 import tasks  # noqa: E402
 import tracker  # noqa: E402
 
-CSV_PATH = ROOT / "job_search_tracker.csv"
+CSV_PATH = ROOT / "archive" / "job_search_tracker.csv"
 
 
 def runCli(argv: list[str]) -> tuple[int, dict]:
@@ -145,7 +145,7 @@ class TestImporter(unittest.TestCase):
         report = {
             "generatedAt": "now",
             "dryRun": True,
-            "source": "job_search_tracker.csv",
+            "source": "archive/job_search_tracker.csv",
             "summary": importer.summarize(self.payloads, self.warnings),
             "reconciliation": importer.reconciliation(self.payloads, self.rows),
             "checks": {"rows read == 84": "PASS"},
@@ -469,6 +469,112 @@ class TestEmulatorModules(unittest.TestCase):
             result = tasks.fail(self.db, request["requestId"], "boom")
         self.assertEqual(result["state"], "sync:failed")
 
+    def test_sync_due_leaves_requests_pending_when_the_inbox_was_not_fetched(self):
+        request = tasks.enqueue(self.db, ["acme--engineer"], hours=0)
+        missing = pathlib.Path(tempfile.gettempdir()) / "no-such-inbox.json"
+        code, result = runCli(["sync-due", "--json", str(missing)])
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result["processed"], 0)
+        self.assertEqual(result["skipped"], "no inbox payload")
+        stored = (
+            self.db.collection(client.SYNC_REQUESTS).document(request["requestId"]).get().to_dict()
+        )
+        self.assertEqual(stored["state"], "sync:pending")
+        self.assertEqual(stored.get("attempts", 0), 0)
+
+    def test_collect_stores_the_label_inventory_for_the_next_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inbox = pathlib.Path(directory) / "inbox.json"
+            inbox.write_text(json.dumps({"messages": []}), encoding="utf-8")
+            labels = pathlib.Path(directory) / "labels.json"
+            labels.write_text(
+                json.dumps({"labels": [{"id": "Label_1", "name": "JOBS/Applications"}]}),
+                encoding="utf-8",
+            )
+            code, result = runCli(
+                ["collect", "--json", str(inbox), "--labels", str(labels)]
+            )
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result["labels"], 1)
+        code, stored = runCli(["labels"])
+        self.assertEqual(code, 0)
+        self.assertEqual(stored["labels"][0]["name"], "JOBS/Applications")
+        # A quiet fetch still records the inventory; it just stages nothing.
+        self.assertFalse(result["staged"])
+
+    def test_collect_does_not_re_propose_an_already_processed_message(self):
+        applicationId = "acme--processed-engineer"
+        self.db.collection(client.APPLICATIONS).document(applicationId).set(
+            contract.toFirestore(
+                {
+                    "id": applicationId,
+                    "date": "2026-10-01",
+                    "company": "Acme",
+                    "companyId": "acme",
+                    "role": "Engineer",
+                    "status": "status:applied",
+                    "createdAt": "2026-10-01T00:00:00+00:00",
+                    "updatedAt": "2026-10-01T00:00:00+00:00",
+                    "schemaVersion": contract.schemaVersion(),
+                }
+            )
+        )
+        self.db.collection(client.META).document(client.META_SYNC).set(
+            {"gmail": {"processedMessageIds": ["m-seen"]}}, merge=True
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            inbox = pathlib.Path(directory) / "inbox.json"
+            inbox.write_text(
+                json.dumps(
+                    {
+                        "messages": [
+                            {
+                                "messageId": "m-seen",
+                                "applicationId": applicationId,
+                                "subject": "Update",
+                                "snippet": "Unfortunately we are not moving forward.",
+                                "receivedAt": "2026-10-30T10:00:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, result = runCli(["collect", "--json", str(inbox)])
+        self.assertEqual(code, 0, result)
+        self.assertFalse(result.get("staged", False))
+        self.assertEqual(result["alreadyProcessed"], 1)
+
+    def test_collect_marks_unmatched_mail_processed_so_cron_is_idempotent(self):
+        # A scheduled 12-hour fetch must not re-stage the same unresolved
+        # message every run. "Processed" means "examined", not "matched".
+        with tempfile.TemporaryDirectory() as directory:
+            inbox = pathlib.Path(directory) / "inbox.json"
+            inbox.write_text(
+                json.dumps(
+                    {
+                        "messages": [
+                            {
+                                "messageId": "m-unmatched",
+                                "subject": "A newsletter",
+                                "sender": "news@example.com",
+                                "snippet": "Nothing about an application.",
+                                "receivedAt": "2026-10-30T10:00:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            firstCode, first = runCli(["collect", "--json", str(inbox)])
+            secondCode, second = runCli(["collect", "--json", str(inbox)])
+        self.assertEqual(firstCode, 0, first)
+        self.assertTrue(first["staged"])
+        self.assertEqual(first["unmatched"], 1)
+        self.assertEqual(secondCode, 0, second)
+        self.assertFalse(second.get("staged", False))
+        self.assertEqual(second["alreadyProcessed"], 1)
+
     def test_proposal_stage_approve_emits_events(self):
         applicationId = "acme--proposal-engineer"
         self.db.collection(client.APPLICATIONS).document(applicationId).set(
@@ -514,6 +620,58 @@ class TestEmulatorModules(unittest.TestCase):
         self.assertEqual(events[0]["type"], "event:rejection")
         self.assertEqual(events[0]["derivedFrom"], "gmail")
         self.assertEqual(reference.get().to_dict()["status"], "status:rejected")
+
+    def test_approve_can_apply_only_the_selected_changes(self):
+        ids = []
+        for suffix in ("one", "two"):
+            applicationId = f"acme--selective-{suffix}"
+            ids.append(applicationId)
+            self.db.collection(client.APPLICATIONS).document(applicationId).set(
+                contract.toFirestore(
+                    {
+                        "id": applicationId,
+                        "date": "2026-10-01",
+                        "company": "Acme",
+                        "companyId": "acme",
+                        "role": f"Engineer {suffix}",
+                        "status": "status:applied",
+                        "createdAt": "2026-10-01T00:00:00+00:00",
+                        "updatedAt": "2026-10-01T00:00:00+00:00",
+                        "schemaVersion": contract.schemaVersion(),
+                    }
+                )
+            )
+        applications = {
+            applicationId: contract.fromFirestore(
+                self.db.collection(client.APPLICATIONS).document(applicationId).get().to_dict()
+            )
+            for applicationId in ids
+        }
+        proposal = proposals.buildProposal(
+            [
+                {
+                    "messageId": f"m-{index}",
+                    "applicationId": applicationId,
+                    "subject": "Application update",
+                    "sender": "jobs@acme.com",
+                    "snippet": "Unfortunately we are not moving forward.",
+                    "receivedAt": "2026-10-30T10:00:00+00:00",
+                }
+                for index, applicationId in enumerate(ids, start=1)
+            ],
+            applications,
+            now="2026-10-31T09:00:00+00:00",
+        )
+        proposals.stage(self.db, proposal)
+        result = proposals.approve(self.db, proposal["proposalId"], only={2})
+        self.assertEqual(len(result["approved"]), 1)
+        self.assertEqual(result["approved"][0]["applicationId"], ids[1])
+        self.assertEqual(len(result["skipped"]), 1)
+        statuses = [
+            self.db.collection(client.APPLICATIONS).document(applicationId).get().to_dict()["status"]
+            for applicationId in ids
+        ]
+        self.assertEqual(statuses, ["status:applied", "status:rejected"])
 
     def test_approving_twice_is_refused(self):
         proposalId = contract.newUuid()

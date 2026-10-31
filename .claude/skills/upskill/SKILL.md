@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Glob, Grep, WebFetch, WebSearch
 
 ## Invocation
 
-- **`/upskill`** — aggregate mode: analyses all jobs in `job_search_tracker.csv`
+- **`/upskill`** — aggregate mode: analyses all tracked applications
 - **`/upskill <URL>`** — targeted mode: analyses a single job posting fetched from the URL
 
 ---
@@ -34,9 +34,8 @@ In targeted mode, derive a slug from the job title and company for the report fi
 ## Step 2: Load Data
 
 ### Aggregate mode
-1. Read `job_search_tracker.csv`. Extract all rows. The columns are:
-   `date, company, sector, role, role_type, channel, status, contact_person, fit_rating, notes, cv_file, cover_letter_file, source`
-2. For each row, note the `role`, `company`, and `fit_rating`. The `fit_rating` column is a 0–100 score where 100 = perfect fit. You will use it to weight gaps — a lower fit rating means the role exposed more gaps.
+1. Read the tracker with `.venv/bin/python scripts/tracker.py list` (JSON). Each document carries `date`, `company`, `sector`, `role`, `roleType`, `channel`, `status`, `contactPerson`, `fitRating`, and `notesRendered`.
+2. For each document, note the `role`, `company`, and `fitRating`. `fitRating` is a 0–100 score where 100 = perfect fit. You will use it to weight gaps — a lower fit rating means the role exposed more gaps.
 3. Read `.claude/skills/job-application-assistant/01-candidate-profile.md` to get the candidate's current skills and experience.
 4. Check `upskill/` for the most recent aggregate report file (`report-YYYY-MM-DD.md`) — if one exists, note its date and load it for the diff in Step 8.
 
@@ -241,7 +240,7 @@ After saving, print:
 
 1. **Never fabricate resources.** Only cite resources found via actual WebSearch results. Do not invent course names, URLs, or authors.
 2. **Search with the current year.** Include the year in every WebSearch query for resources so results stay fresh.
-3. **Targeted mode ignores the tracker.** In targeted mode, analyse only the fetched posting. Do not load or reference `job_search_tracker.csv`.
+3. **Targeted mode ignores the tracker.** In targeted mode, analyse only the fetched posting. Do not load or reference the tracker.
 4. **Be generous with profile matching.** If a skill appears in the candidate profile in any form, do not flag it as a gap. Avoid false positives.
 5. **Print the heatmap before the learning plan.** Always show the intermediate heatmap table in the terminal before proceeding to resource search, so the user can see what you are working from.
 6. **Omit Low-priority gaps from the learning plan.** List them in the heatmap for completeness, but do not generate study resources for them unless the user asks.

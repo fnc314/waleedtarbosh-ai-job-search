@@ -10,7 +10,9 @@ Three sources, tried in this order and each reported honestly:
 
 1. **store** — Firestore, authoritative.
 2. **cache** — `generated/tracker-cache.json`, a dated snapshot.
-3. **csv** — `job_search_tracker.csv`, the pre-migration record.
+3. **csv** — `archive/job_search_tracker.csv`, the frozen pre-migration record.
+   It never changes, so a CSV answer is always labelled with its age and prefixed
+   `csv (…)` in the badge.
 
 The caller always learns which one answered and how old it is. A reader that
 silently shows a stale snapshot is worse than one that refuses to start, because
@@ -30,7 +32,7 @@ import client
 import contract
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-LEGACY_CSV = REPO_ROOT / "job_search_tracker.csv"
+LEGACY_CSV = REPO_ROOT / "archive" / "job_search_tracker.csv"
 
 # The order the legacy CSV used. Reversed here because the store is authoritative
 # on values, but a consumer diffing columns should still line up.
@@ -116,6 +118,18 @@ def _sortRows(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def _pendingProposalCount(database) -> int:
+    """How many proposals await review. A badge must never break the read."""
+    try:
+        return sum(
+            1
+            for document in database.collection(client.PENDING_PROPOSALS).stream()
+            if document.to_dict().get("state") == "proposal:pending"
+        )
+    except Exception:  # noqa: BLE001 - a missing count is not a read failure
+        return 0
+
+
 def rowsFromStore(db=None) -> tuple[list[dict], dict]:
     """Read every application plus its artifacts from Firestore."""
     database = db or client.getDb()
@@ -132,6 +146,7 @@ def rowsFromStore(db=None) -> tuple[list[dict], dict]:
         "source": "store",
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "stale": False,
+        "pendingProposals": _pendingProposalCount(database),
     }
 
 
@@ -163,6 +178,7 @@ def rowsFromCache(path: pathlib.Path | None = None) -> tuple[list[dict], dict]:
         "generatedAt": generatedAt,
         "ageSeconds": age,
         "stale": age is not None and age > 24 * 3600,
+        "pendingProposals": len(payload.get("pendingProposals") or []),
     }
 
 
@@ -179,6 +195,7 @@ def rowsFromCsv(path: pathlib.Path | None = None) -> tuple[list[dict], dict]:
             source.stat().st_mtime, dt.timezone.utc
         ).isoformat(timespec="seconds"),
         "stale": False,
+        "pendingProposals": 0,
     }
 
 

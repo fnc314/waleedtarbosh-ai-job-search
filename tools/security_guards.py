@@ -57,7 +57,7 @@ REQUIRED_IGNORE_RULES = [
     "documents/references/**",
     "documents/applications/**",
     "documents/interview/**",
-    "job_search_tracker.csv",
+    "archive/*.csv",
     # Service-account credentials for the tracker store. A committed key grants
     # read/write to the only authoritative copy of the application record.
     "sa.json",
@@ -79,6 +79,9 @@ ALLOWED_IGNORE_NEGATIONS = {
     "!cover_letters/cover_example.tex",
     "!documents/**/.gitkeep",
     "!.env.example",
+    # Instruction pointers only. The rest of each runner directory stays local.
+    "!.gemini/GEMINI.md",
+    "!.qwen/QWEN.md",
 }
 
 FORBIDDEN_SCRIPTS = {"preinstall", "install", "postinstall", "prepare", "prepack"}

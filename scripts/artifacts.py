@@ -80,6 +80,38 @@ def upload(bucket, *, applicationId: str, kind: str, path: str | pathlib.Path,
     return {"bucket": bucket.name, "path": destination}
 
 
+def ensureUpload(bucket, *, applicationId: str, kind: str, path: str | pathlib.Path,
+                 sha256: str, size: int) -> tuple[dict, bool]:
+    """Upload unless the blob already exists; return (storage, uploaded).
+
+    Backfill has to be re-runnable. `upload` is create-only, so a second run
+    would fail on every file it had already placed. Here an existing blob is
+    reused when its recorded hash matches, or adopted when it predates hash
+    metadata. A *different* hash at the same path is an error: that is a
+    silently replaced file, and overwriting it would lose the submitted copy.
+    """
+    filePath = pathlib.Path(path).expanduser()
+    destination = blobPath(applicationId, kind, filePath.name)
+    blob = bucket.blob(destination)
+    storage = {"bucket": bucket.name, "path": destination}
+    if blob.exists():
+        blob.reload()
+        recorded = (blob.metadata or {}).get("sha256")
+        if recorded and recorded != sha256:
+            raise ArtifactError(
+                f"{destination} already holds different content "
+                f"(recorded {recorded[:12]}…, file {sha256[:12]}…)"
+            )
+        if not recorded:
+            blob.metadata = {**(blob.metadata or {}), "sha256": sha256, "size": str(size)}
+            blob.patch()
+        return storage, False
+    blob.content_type = contentTypeFor(filePath)
+    blob.metadata = {"sha256": sha256, "size": str(size)}
+    blob.upload_from_filename(str(filePath), if_generation_match=0)
+    return storage, True
+
+
 def exists(bucket, name: str) -> bool:
     return bucket.blob(name).exists()
 

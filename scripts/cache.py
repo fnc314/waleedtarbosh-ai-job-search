@@ -41,12 +41,25 @@ def readAll(db) -> dict:
             for document in reference.collection(client.ARTIFACTS).stream()
         ]
     applications.sort(key=lambda item: (item.get("date") or "", item["id"]), reverse=True)
+    # The TUI shows a review badge; the cache must carry it too, or an offline
+    # reader would claim there is nothing waiting when there is.
+    pendingProposals = [
+        {
+            "proposalId": document.get("proposalId"),
+            "createdAt": document.get("createdAt"),
+            "changes": len(document.get("changes") or []),
+            "unmatched": len(document.get("unmatched") or []),
+        }
+        for document in db.collection(client.PENDING_PROPOSALS).stream()
+        if document.to_dict().get("state") == "proposal:pending"
+    ]
     return {
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "schemaVersion": contract.schemaVersion(),
         "applications": applications,
         "events": eventsByApplication,
         "artifacts": artifactsByApplication,
+        "pendingProposals": pendingProposals,
     }
 
 

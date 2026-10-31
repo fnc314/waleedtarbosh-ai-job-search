@@ -18,7 +18,7 @@ import jsonschema
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "tracker.schema.json"
-CSV_PATH = ROOT / "job_search_tracker.csv"
+CSV_PATH = ROOT / "archive" / "job_search_tracker.csv"
 
 LOWER_PASCAL = re.compile(r"^[a-z][a-zA-Z0-9]*$")
 

@@ -50,7 +50,7 @@ class CredentialError(RuntimeError):
 
 
 class WriteNotAllowed(RuntimeError):
-    """Raised when a write is attempted during the migration window."""
+    """Raised when a write is attempted without the explicit opt-in."""
 
 
 def resolveCredentialsPath() -> pathlib.Path | None:
@@ -114,22 +114,22 @@ def getCredentials(scopes: list[str] | None = None):
 
 
 def assertWritesAllowed(purpose: str = "application data") -> None:
-    """Gate writes to the record during the migration window.
+    """Gate writes to the record.
 
-    The CSV remains authoritative until Phase 10. Any writer that silently
-    updated Firestore during that window would make the Phase 3 reconciliation
-    meaningless, so the gate is explicit and inverted: you must opt in with
-    TRACKER_ALLOW_WRITES=1. Infrastructure documents (meta/*) are exempt
-    because they describe the store rather than record applications, and
-    seeding them is what proves the connection works.
+    The gate is explicit and inverted: you must opt in with
+    TRACKER_ALLOW_WRITES=1. Writers have been ported to this path, so the gate
+    now exists to make "the record changed" a deliberate act rather than a side
+    effect of running a command, and to keep a stray agent run from mutating
+    history. Infrastructure documents (meta/*) are exempt because they describe
+    the store rather than record applications.
     """
     if os.environ.get("TRACKER_ALLOW_WRITES") == "1":
         return
     raise WriteNotAllowed(
-        f"refusing to write {purpose} while the CSV is still authoritative.\n"
-        "  The migration plan keeps job_search_tracker.csv canonical until Phase 10.\n"
-        "  Read-only: check, list, get, export, import --dry-run.\n"
-        "  To proceed anyway: TRACKER_ALLOW_WRITES=1"
+        f"refusing to write {purpose} without explicit permission.\n"
+        "  Writes are opt-in so the record cannot change as a side effect.\n"
+        "  Read-only: check, list, get, export, collect --dry-run, score --dry-run\n"
+        "  To proceed: TRACKER_ALLOW_WRITES=1"
     )
 
 

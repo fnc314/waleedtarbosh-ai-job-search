@@ -126,6 +126,19 @@ class TestCacheSource(unittest.TestCase):
         self.assertGreaterEqual(meta["ageSeconds"], 300)
         self.assertEqual(rows[0]["cv_file"], "documents/cv.pdf")
 
+    def test_cache_reports_how_many_proposals_await_review(self):
+        payload = {
+            "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "applications": [application()],
+            "artifacts": {},
+            "pendingProposals": [{"proposalId": "p1", "changes": 1}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "cache.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            _rows, meta = reader.rowsFromCache(path)
+        self.assertEqual(meta["pendingProposals"], 1)
+
     def test_old_cache_is_marked_stale(self):
         payload = {
             "generatedAt": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2)).isoformat(

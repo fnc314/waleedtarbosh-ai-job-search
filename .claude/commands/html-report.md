@@ -1,6 +1,6 @@
 # /html-report - Generate Application Tracker Dashboard
 
-Generate a self-contained HTML dashboard from `job_search_tracker.csv` and the application archives under `documents/applications/`. The output is a single `.html` file — no server, no dependencies — that can be opened directly in a browser.
+Generate a self-contained HTML dashboard from the tracker store and the application archives under `documents/applications/`. The output is a single `.html` file — no server, no dependencies — that can be opened directly in a browser.
 
 ## Step 0: Parse Arguments
 
@@ -16,10 +16,9 @@ Create `reports/` if it does not exist.
 
 Read in parallel:
 
-1. **`job_search_tracker.csv`** — the primary source. Parse every row into a record with fields:
-   `date`, `company`, `sector`, `role`, `role_type`, `channel`, `status`, `contact_person`, `fit_rating`, `notes`, `cv_file`, `cover_letter_file`, `source`
+1. **The tracker store** — the primary source. Read it with `.venv/bin/python scripts/tracker.py list`, which returns one JSON document per application with `date`, `company`, `sector`, `role`, `roleType`, `channel`, `status`, `contactPerson`, `fitRating`, `notesRendered`, `source`, plus `artifacts` via `tracker.py get <id>` for the CV and cover-letter paths. `scripts/generate_report.py` already does this and is what `/html-report` should regenerate from.
 
-2. **`documents/applications/*/outcome.md`** — for each resolved application, read the outcome file to get the exact interview stages reached (the checkboxes) and any notes. Merge this into the matching tracker row by company+role fuzzy match (lowercase, ignore punctuation). If an archive exists for a row but there is no match, attach it as extra context anyway.
+2. **`documents/applications/*/outcome.md`** — for each resolved application, read the outcome file to get the exact interview stages reached (the checkboxes) and any notes. Merge this into the matching tracker document by company+role fuzzy match (lowercase, ignore punctuation). If an archive exists for a row but there is no match, attach it as extra context anyway.
 
 Status normalisation — map tracker values to five canonical buckets before computing stats:
 - `applied` → **Active** (resume submitted, no further signal)
@@ -48,7 +47,7 @@ From the normalised data compute:
 
 Write a single self-contained HTML file. All CSS is inline in a `<style>` block. All JS is inline in a `<script>` block. Draw the doughnut and bar charts as hand-generated inline SVG — no Chart.js, no CDN, no external dependencies of any kind. The report must render fully offline on every open.
 
-**Escaping (required):** HTML-escape every CSV/outcome-file value (`&` `<` `>` `"` `'`) before interpolating it into the page — this includes table cells, `title` attributes on truncated notes, and any text placed inside SVG (`<text>` labels, chart tooltips). Notes and company names copied from job postings routinely contain these characters; unescaped, they break the layout or inject markup into a page the user opens routinely.
+**Escaping (required):** HTML-escape every tracker/outcome-file value (`&` `<` `>` `"` `'`) before interpolating it into the page — this includes table cells, `title` attributes on truncated notes, and any text placed inside SVG (`<text>` labels, chart tooltips). Notes and company names copied from job postings routinely contain these characters; unescaped, they break the layout or inject markup into a page the user opens routinely.
 
 ### Layout
 

@@ -2,10 +2,12 @@
 
 You are recording what happened to a job application: progress updates (interview invitations, stages completed, offers) and final resolutions (hired, rejected, no response). The data lands in two places the framework already reads but nothing systematically writes:
 
-- `job_search_tracker.csv` - the status column that `/scrape` and `/rank` use for dedup and exclusion
+- the tracker store (Firestore, written through `scripts/tracker.py`) - the status and event history that `/scrape` and `/rank` use for dedup and exclusion
 - `documents/applications/<company>_<role>/` - the per-application archive (posting, submitted drafts, `outcome.md`) that `/setup` Path A mines to calibrate `04-job-evaluation.md` and surface STAR candidates
 
 `/outcome` writes the data; `/setup` interprets it. This command never edits the evaluation framework or profile files itself.
+
+**Every tracker write goes through `scripts/tracker.py`.** Never hand-edit a document, and never write `job_search_tracker.csv` — that file is a frozen snapshot from the 2026-10 migration, and nothing updates it (see `docs/tracker-migration.md`).
 
 The command also owns the stretch *before* there is an outcome to record: the **follow-up branch** (Step 2b) surfaces open applications that have gone quiet, drafts a brief follow-up note in the user's voice, and logs it - so the chase and the resolution it eventually leads to live in one flow.
 
@@ -27,13 +29,25 @@ Follow these steps **in order**.
 
 ## Step 1: Load State and Identify the Application
 
-1. Read `job_search_tracker.csv`. If it does not exist, create it with the standard header:
+1. Read the record with `.venv/bin/python scripts/tracker.py list --open` (optionally `--limit N`). It prints JSON: each document carries `id`, `company`, `role`, `date`, `status`, `fitRating`, plus derived `counters` and `timeline`.
+2. **With an argument:** match documents case-insensitively on company (and role, if given). One match → proceed. Several → list them and ask. None → the application was made outside the workflow; collect company, role, date applied, channel, and posting URL from the user, then create the record with a JSON payload:
+   ```bash
+   TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py add --json - <<'JSON'
+   {
+     "company": "Acme",
+     "role": "Staff Android Engineer",
+     "date": "2026-10-30",
+     "status": "applied",
+     "channel": "channel:other",
+     "source": "https://example.com/posting",
+     "events": [{"type": "event:applied", "date": "2026-10-30"}]
+   }
+   JSON
    ```
-   id,date,company,sector,role,role_type,channel,status,contact_person,fit_rating,notes,cv_file,cover_letter_file,source
-   ```
-   Every new row's `id` is derived, never typed by hand: `slug(company)--slug(role)` (lowercase, non-alphanumerics collapsed to `-`), or bare `slug(company)` if the role is unknown. Validate the result with `python3 scripts/export_tracker_json.py --check` after writing.
-2. **With an argument:** match rows case-insensitively on company (and role, if given). One match → proceed. Several → list them and ask. None → the application was made outside the workflow; collect company, role, date applied, channel, and posting URL from the user and add a tracker row.
-3. **Without an argument:** list all rows whose status is not final (not hired / rejected / no response / withdrawn / offer declined) as a numbered table (company, role, date applied, current status, days quiet, follow-ups sent) and ask which to update. The two derived columns come straight from existing data: **days quiet** counts from the row's `date` or the latest dated entry in `notes`, whichever is more recent; **follow-ups sent** counts the `followed up YYYY-MM-DD` markers in `notes`. If any open row is 10+ days quiet with fewer than two follow-ups sent, add one line under the table: "Some of these have gone quiet - want a follow-up draft? (Step 2b)". If every row is resolved, say so and stop.
+   - The `id` is derived from `company` + `role`, never typed by hand. Add `--dry-run` first and read the resolved document back.
+   - `channel` must be a `channel:*` value from `tracker.schema.json`. If the source is not a recognised ATS, use `channel:other` and keep the human label in `metadata.legacyChannel`.
+   - `status` accepts the legacy labels below; the CLI namespaces them.
+3. **Without an argument:** list every open application (`--open`) as a numbered table (company, role, date applied, current status, days quiet, follow-ups sent) and ask which to update. **Days quiet** is `timeline.daysSinceActivity`; **follow-ups sent** is `counters.followUpsSent`. Both are computed from the event log — never re-parse prose to derive them. If any open record is 10+ days quiet with fewer than two follow-ups, add one line under the table: "Some of these have gone quiet - want a follow-up draft? (Step 2b)". If every record is resolved, say so and stop.
 4. Derive the archive folder name: `documents/applications/<company>_<role>/` - lowercase, underscores for spaces (the convention documented in `documents/README.md`). Check whether the folder and an `outcome.md` already exist - if so, you are updating, not creating.
 
 ---
@@ -78,7 +92,11 @@ Enter this branch from the `followup` argument (Step 0) or from the offer under 
 
 **Logging.** Once the user confirms they will send it (or have sent it), log it in the same turn - an unlogged follow-up breaks the next run's quiet-days math:
 
-- Append `followed up YYYY-MM-DD` to the row's `notes` column (Step 4's rule applies: append a dated note, never restructure the CSV).
+- Append a `event:follow-up-sent` event:
+  ```bash
+  TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py event <applicationId> --type event:follow-up-sent --date YYYY-MM-DD --note "followed up via <channel>"
+  ```
+  The event increments `counters.followUpsSent` and resets `timeline.daysSinceActivity`; nothing needs to parse a note to recount.
 - Save the final note as `followup_YYYY-MM-DD.md` in the application's archive folder. Safe by documented convention: `/setup` reads only the four named archive files and ignores extras (the same rule that covers `/interview`'s prep files), and `documents/applications/**` is gitignored personal data.
 
 If the user decides not to send, log nothing.
@@ -91,7 +109,7 @@ If the user decides not to send, log nothing.
 
 Create or update `documents/applications/<company>_<role>/`. All content here is personal data - the folder is already gitignored (`documents/applications/**`), so nothing needs redacting.
 
-1. **`cv_draft.tex` and `cover_letter.tex`** - copy (never move) the submitted files. Locate them via the tracker row's `cv_file`/`cover_letter_file` columns; if those are empty, look for `cv/main_<company>*.tex` and `cover_letters/cover_<company>_*.tex`. If a file already exists in the archive, leave it - the archived version is what was actually submitted. If no draft files exist (application made outside `/apply`), skip with a note.
+1. **`cv_draft.tex` and `cover_letter.tex`** - copy (never move) the submitted files. Locate them via `.venv/bin/python scripts/tracker.py get <applicationId>` → `artifacts[]` with `kind: artifact:cv` / `artifact:cover-letter` (each carries `localPath`, `driveUrl`, or `externalUrl`); if those are empty, look for `cv/main_<company>*.tex` and `cover_letters/cover_<company>_*.tex`. If a file already exists in the archive, leave it - the archived version is what was actually submitted. If no draft files exist (application made outside `/apply`), skip with a note.
 2. **`job_posting.md`** - if it already exists, leave it. Otherwise try WebFetch on the tracker row's `source` URL and save the posting text. If the URL is dead (postings expire fast - this is exactly why the archive matters), ask the user to paste the posting, or write a stub noting the posting is unavailable. **Never reconstruct a posting from memory.**
 3. **`outcome.md`** - write or update it in exactly the format documented in `documents/README.md`, so `/setup` Path A parses it without special cases:
 
@@ -122,9 +140,24 @@ Update rules: tick stage checkboxes as they are reached (add the date in parenth
 
 ## Step 4: Update the Tracker
 
-Update the matched row's `status` column and append a short dated note to the `notes` column. Never restructure the CSV, reorder rows, or touch other rows.
+Record the change as an **event**. The record is an append-only log, so the update is a new entry rather than a field overwrite — that is what makes the history auditable and the derived counters correct.
 
-**Canonical `status` vocabulary (snake_case, closed set).** The tracker is exported to Firebase, so a value outside this set is a bug:
+**Status change (funnel moved):**
+```bash
+TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py status <applicationId> <status> --date YYYY-MM-DD --note "<what happened>"
+```
+The CLI namespaces the status, emits the matching event (`event:interview-scheduled`, `event:rejection`, …), updates `isOpen`, recomputes `notesRendered`, and queues a Gmail sync check two hours out.
+
+**Activity that does not move the funnel** (follow-up sent, interview completed, assessment taken):
+```bash
+TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py event <applicationId> --type event:follow-up-sent --date YYYY-MM-DD --note "..."
+```
+
+**Corrections.** If the stored status is simply wrong, pass `--correction`; it emits `event:status-corrected` instead of pretending the funnel moved. A no-op status call is refused for the same reason.
+
+**Never** delete an event, patch a derived field, or re-write history. A mistaken entry is corrected by a later event, so the record still shows both.
+
+**Canonical `status` vocabulary (closed set).** The CLI accepts these or their `status:*` forms; anything else is rejected:
 
 `drafting` → `applied` → `interview` → `offer` → `hired` / `rejected` / `no_response` / `offer_declined` / `withdrawn`
 
@@ -132,7 +165,7 @@ Update the matched row's `status` column and append a short dated note to the `n
 - Never write `in_progress` to the tracker; that value belongs to `outcome.md`'s own `Status:` field, not to the tracker enum. Use the stage-appropriate value above instead.
 - Values with spaces or capitals (`no response`, `Offer Declined`) are rejected by the schema check; always snake_case.
 
-The full column contract lives in `job_search_tracker.schema.json`.
+The full contract lives in `tracker.schema.json`.
 
 ---
 
@@ -173,7 +206,7 @@ If the recorded status is `hired`, congratulate the user warmly first - this is 
 1. **Write data, don't interpret it.** The archive and tracker are the outputs; calibration belongs to `/setup`. This command never edits profile or framework files.
 2. **The archived version is the submitted version.** Existing files in the application folder are never overwritten by fresher drafts.
 3. **Never fabricate.** A dead posting URL gets a user-pasted copy or an explicit "unavailable" stub, not a reconstruction. Feedback is recorded as the user reports it.
-4. **Stay schema-compatible.** `outcome.md` follows the format in `documents/README.md` exactly (`in_progress` is the one addition, for open applications); the tracker keeps its columns.
+4. **Stay schema-compatible.** `outcome.md` follows the format in `documents/README.md` exactly (`in_progress` is the one addition, for open applications); every tracker write goes through `scripts/tracker.py`, which validates against `tracker.schema.json`.
 5. **Idempotent updates.** Re-running on the same application appends new stages and notes; it never duplicates folders, rows, or history.
 6. **Follow-ups: draft only, never send.** The follow-up branch produces text for the user to send themselves. It never emails, messages, or submits anything, and it must not be wired to tools that do.
 7. **Follow-ups: no new claims.** Every substantive statement in a follow-up or thank-you note comes from the archived submitted materials. Rule 3 applies with no exceptions.

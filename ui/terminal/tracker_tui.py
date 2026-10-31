@@ -1,4 +1,5 @@
 import curses
+import datetime
 import json
 import os
 import re
@@ -7,6 +8,7 @@ import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+RECALC_QUEUE_PATH = REPO_ROOT / ".recalc_queue"
 
 DEFAULT_CONFIG = {
     "columns": [
@@ -86,6 +88,31 @@ def _load_reader():
     return reader
 
 DATA_META = {"source": "unknown"}
+
+def write_recalc_request(row):
+    """Ask for a fit recalculation without performing one.
+
+    The TUI cannot compute a score: that comes from the evaluation rubric. So it
+    queues a structured request keyed on the application id, which `/apply` or
+    an agent resolves with `tracker.py score`. Writing the whole legacy row (as
+    the old queue did) meant the consumer had to re-derive company, role, and id
+    from free text, and it could not tell which generation of the shape it got.
+    """
+    request = {
+        "schemaVersion": 4,
+        "kind": "fit-recalculation",
+        "requestedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "applicationId": row.get("id"),
+        "company": row.get("company"),
+        "role": row.get("role"),
+        "currentFitRating": row.get("fit_rating") or None,
+    }
+    try:
+        with open(RECALC_QUEUE_PATH, "w") as handle:
+            json.dump(request, handle, indent=2)
+    except OSError:
+        pass
+    return request
 
 def load_data():
     """Rows come from the tracker store, then the cache, then the CSV.
@@ -440,6 +467,9 @@ def main(stdscr):
             # Provenance is part of the header, not a hidden status: a stale
             # cache must never be mistaken for the live record.
             header_text += f"| {DATA_META.get('label', 'unknown')} "
+            pending = DATA_META.get("pendingProposals") or 0
+            if pending:
+                header_text += f"| {pending} to review "
             safe_addstr(stdscr, 0, 0, header_text.ljust(list_w)[:list_w], c_header)
             
             # Column fitting
@@ -549,8 +579,7 @@ def main(stdscr):
         elif in_detail and not config["split_mode"]:
             if key == ord('r'):
                 target_idx = active_selection_idx if active_selection_idx is not None else current_row
-                with open('.recalc_queue', 'w') as f:
-                    json.dump(rows[target_idx], f)
+                write_recalc_request(rows[target_idx])
                 break
             if key in [ord('b'), ord('q')]: in_detail = False
             elif key in [curses.KEY_DOWN, ord('j')]:
@@ -580,8 +609,7 @@ def main(stdscr):
             if key == ord('c'): in_settings = True
             elif key == ord('r'):
                 target_idx = active_selection_idx if active_selection_idx is not None else current_row
-                with open('.recalc_queue', 'w') as f:
-                    json.dump(rows[target_idx], f)
+                write_recalc_request(rows[target_idx])
                 break
             elif key == ord('t'):
                 is_light_theme = not is_light_theme

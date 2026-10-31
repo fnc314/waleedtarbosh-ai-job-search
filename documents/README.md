@@ -113,7 +113,7 @@ A drop folder for raw job posting text when Claude can't fetch a page directly (
 
 A record of past job applications. Each subfolder is one application.
 
-You can maintain these folders by hand, or let the **`/outcome`** command do it: it records progress updates and final results conversationally, archives the submitted drafts and the posting text, keeps `outcome.md` in the format below, and updates `job_search_tracker.csv` in the same step.
+You can maintain these folders by hand, or let the **`/outcome`** command do it: it records progress updates and final results conversationally, archives the submitted drafts and the posting text, keeps `outcome.md` in the format below, and records the change in the tracker store in the same step.
 
 **Subfolder naming:** `<company>_<role>` — lowercase, underscores for spaces.
 
@@ -157,7 +157,7 @@ Any signal about what they valued or didn't?
 
 `in_progress` marks an application that is still open (used by `/outcome` for interview-stage updates before a resolution). `/setup`'s calibration draws conclusions only from applications with a final status.
 
-That `in_progress` value is specific to this file's `Status:` field. `job_search_tracker.csv` uses a separate, closed snake_case vocabulary — `drafting`, `applied`, `interview`, `offer`, `hired`, `rejected`, `no_response`, `offer_declined`, `withdrawn` — defined in `job_search_tracker.schema.json` and enforced by `scripts/export_tracker_json.py`.
+That `in_progress` value is specific to this file's `Status:` field. The tracker uses a separate, closed namespaced vocabulary — `status:drafting`, `status:applied`, `status:interview`, `status:offer`, `status:hired`, `status:rejected`, `status:no-response`, `status:offer-declined`, `status:withdrawn` — defined in `tracker.schema.json` and enforced by `scripts/tracker.py`.
 
 Application folders may also contain **`interview_prep_<stage>.md`** files written by `/interview` (one per interview stage, kept as history). `/setup` reads only the four files named above and ignores these.
 

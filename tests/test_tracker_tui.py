@@ -1,7 +1,9 @@
 """Unit tests for ui/terminal/tracker_tui.py."""
 
 import importlib.util
+import json
 import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -50,6 +52,31 @@ class TrackerTuiTests(unittest.TestCase):
             else:
                 os.environ["TRACKER_SOURCE"] = previous
         self.assertIsInstance(rows, list)
+
+    def test_recalc_request_is_structured_and_uses_the_application_id(self):
+        row = {"id": "acme--staff-android-engineer", "company": "Acme", "role": "Staff Android", "fit_rating": "88"}
+        with tempfile.TemporaryDirectory() as directory:
+            previous = tui_mod.RECALC_QUEUE_PATH
+            tui_mod.RECALC_QUEUE_PATH = Path(directory) / ".recalc_queue"
+            try:
+                request = tui_mod.write_recalc_request(row)
+                written = json.loads((Path(directory) / ".recalc_queue").read_text())
+            finally:
+                tui_mod.RECALC_QUEUE_PATH = previous
+        self.assertEqual(written, request)
+        self.assertEqual(request["kind"], "fit-recalculation")
+        self.assertEqual(request["applicationId"], "acme--staff-android-engineer")
+        self.assertEqual(request["currentFitRating"], "88")
+        self.assertIn("requestedAt", request)
+
+    def test_recalc_request_survives_an_unwritable_queue(self):
+        previous = tui_mod.RECALC_QUEUE_PATH
+        tui_mod.RECALC_QUEUE_PATH = Path("/no/such/dir/.recalc_queue")
+        try:
+            request = tui_mod.write_recalc_request({"id": "acme--one", "company": "Acme"})
+        finally:
+            tui_mod.RECALC_QUEUE_PATH = previous
+        self.assertEqual(request["applicationId"], "acme--one")
 
     def test_get_archive_dir_fuzzy_lookup(self):
         row = {"company": "OpenAI", "role": "Android Engineer", "date": "2026-10-27"}

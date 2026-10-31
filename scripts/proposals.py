@@ -249,12 +249,15 @@ def load(db, proposalId: str) -> dict:
     return contract.fromFirestore(snapshot.to_dict())
 
 
-def approve(db, proposalId: str, *, reviewedBy: str = "actor:user", note: str | None = None) -> dict:
-    """Apply every change, one event per change, in bounded batches.
+def approve(db, proposalId: str, *, reviewedBy: str = "actor:user", note: str | None = None,
+            only: set[int] | None = None) -> dict:
+    """Apply the selected changes, one event per change, in bounded batches.
 
     A change whose target status equals the application's current status is
     skipped, so approving a batch staged before an intervening write cannot
-    duplicate a transition. Skips are reported, never silent.
+    duplicate a transition. Skips are reported, never silent. `only` holds
+    1-based change indexes: review is allowed to be selective, and a change the
+    reviewer left out is reported as skipped rather than silently applied.
     """
     proposal = load(db, proposalId)
     if proposal["state"] != PENDING:
@@ -267,8 +270,11 @@ def approve(db, proposalId: str, *, reviewedBy: str = "actor:user", note: str | 
     prepared: list[tuple[str, dict]] = []
     skipped = []
 
-    for change in proposal["changes"]:
+    for index, change in enumerate(proposal["changes"], start=1):
         applicationId = change["applicationId"]
+        if only is not None and index not in only:
+            skipped.append({"index": index, "applicationId": applicationId, "reason": "not selected"})
+            continue
         if applicationId not in applications:
             snapshot = db.collection(client.APPLICATIONS).document(applicationId).get()
             if not snapshot.exists:

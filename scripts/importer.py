@@ -1,6 +1,7 @@
 """One-shot import of the legacy CSV into the tracker contract.
 
-The importer is the only code in the repo that reads `job_search_tracker.csv`
+The importer is the only code in the repo that reads the CSV, and only when it is
+pointed at `archive/job_search_tracker.csv` for a re-import or a rollback check
 for migration, and it opens it read-only. It is also the one place where the
 historical record's irregularities are handled, so they are handled once:
 
@@ -170,6 +171,8 @@ def rowToPayload(row: dict, index: int, now: str) -> tuple[dict, list[str]]:
             "not treated as evidence"
         )
 
+    # Stable origin label, not the current path: the 84 imported documents
+    # already carry this value, and a re-import must not rewrite them.
     metadata: dict = {"importIndex": index, "importedFrom": "job_search_tracker.csv"}
     if row["channel"].strip():
         metadata["legacyChannel"] = row["channel"].strip()

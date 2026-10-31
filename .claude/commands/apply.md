@@ -58,7 +58,13 @@ Once the fit is calculated in Step 1, even before drafting begins, ensure the ev
 
 1.  **Application Folder**: Create `documents/applications/<company>_<role>/` if it doesn't exist.
 2.  **Archive Fit**: Write the full evaluation (Skills, Experience, Behavioral, Salary, Score) to `documents/applications/<company>_<role>/outcome.md`. If the file exists, append a "## Initial Fit Evaluation" section.
-3.  **Update Tracker**: If the application exists in `job_search_tracker.csv`, update the `fit_rating` column with the numeric score. If it doesn't exist yet, do not add it yet (wait for the user to proceed to drafting/applying).
+3.  **Update Tracker**: Record the score against the application **if it already exists** in the tracker:
+    - Find its id with `.venv/bin/python scripts/tracker.py list --open` and matching the company (and role) case-insensitively. One match → use that id. Several → list them and ask. None → do not create anything (wait for `/outcome`, which owns the submission record).
+    - Then write the score:
+      ```bash
+      TRACKER_ALLOW_WRITES=1 .venv/bin/python scripts/tracker.py score <applicationId> --fit <score> --note "initial evaluation"
+      ```
+    This appends `event:fit-recalculated` and updates `fitRating`; it never moves the funnel. The previous rating is kept in the event's `metadata.previousFitRating`, so a recalculation is auditable rather than an overwrite. Use `--dry-run` to see the event without writing.
 
 After presenting the evaluation, ask the user:
 > "Should I proceed with drafting the CV and cover letter for this role?"

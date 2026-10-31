@@ -144,7 +144,7 @@ Postings are treated as untrusted input (the workflow follows no instructions em
 - **`/rank`** bridges `/scrape` and `/apply`: it batch-scores all newly scraped postings against the fit framework (parallel agents fetch each posting and score the five evaluation dimensions) and returns a ranked shortlist with honest per-job strengths and gaps. Deal-breakers veto, deadlines get urgency flags, dead postings get marked expired. Pick a number and it hands off to the full `/apply` workflow.
 - **`/expand`** enriches your profile by scanning public sources you've already linked in it (GitHub repos, portfolio site, Kaggle, Google Scholar) and looking up syllabi for named courses and certifications. Discovered competencies are added to your profile with a source tag. Useful right after `/setup` to surface skills that documents alone don't make explicit.
 - **`/upskill`** analyzes the gap between your profile and your tracked job postings (or a single posting via `/upskill <URL>`). Produces a prioritized heatmap of skill gaps and a learning plan with web-searched study resources and time estimates. Useful for career planning between applications.
-- **`/html-report`** generates a self-contained HTML dashboard from `job_search_tracker.csv` and the application archives — stat cards, status/sector/channel/funnel charts (inline SVG, no external dependencies), and a filterable applications table. Saved to `reports/` and `ui/web/application-dashboard.html`, which can be served locally via `python3 ui/web/application-dashboard-server.py`. Re-run it any time after `/outcome` adds new entries.
+- **`/html-report`** generates a self-contained HTML dashboard from the tracker store and the application archives — stat cards, status/sector/channel/funnel charts (inline SVG, no external dependencies), and a filterable applications table. Saved to `reports/` and `ui/web/application-dashboard.html`, which can be served locally via `python3 ui/web/application-dashboard-server.py`. Re-run it any time after `/outcome` adds new entries.
 - **`/add-template`** registers your own CV or cover letter template (LaTeX, Typst, or another toolchain) in place of the stock ones. It captures the template's instructions (source extension, compile command, fonts, style rules, page limit), runs a mandatory test compile, and wires the template into `/apply`. See [Custom templates](#custom-templates) below.
 - **`/add-portal`** generates a job-portal search skill for a job board in your market. It investigates the portal (search URL pattern, result structure, access rules), scaffolds the CLI skill from the same structure as the shipped ones, and test-runs a live query before registering. See [Job search tools](#job-search-tools) below.
 
@@ -212,10 +212,13 @@ ai-job-search/
 │   ├── lint_skills.py                 # CI lint for skills, commands, settings.json
 │   ├── security_guards.py             # CI guards: permission allowlist, gitignore rules, manifests
 │   └── README_SALARY_TOOL.md          # Salary tool setup instructions
+├── scripts/tracker.py                 # The only writer of the application record
+├── tracker.schema.json                # Typed contract for Firestore documents (v4)
+├── archive/                           # Frozen CSV-era snapshot; never a data source
 ├── job_scraper/                       # Scraper state (seen jobs, results)
-├── gmail_sync/                        # /gmail-sync state (processed message IDs, last sync date)
+├── generated/                         # Disposable caches + Gmail fetch payloads (gitignored)
+├── .env.local                         # Local secrets (gitignored); see .env.example
 ├── upskill/                           # /upskill report output (markdown reports per run)
-├── job_search_tracker.csv             # Application tracking spreadsheet
 └── SETUP.md                           # Detailed setup guide
 ```
 
@@ -243,7 +246,7 @@ python3 ui/web/application-dashboard-server.py
 python3 scripts/generate_report.py
 ```
 - **Live Local Server:** Quickly spun up with `python3 ui/web/application-dashboard-server.py` (served on `http://127.0.0.1:8000`).
-- **Auto-Regeneration:** Visit `http://127.0.0.1:8000/refresh` or start with `--regenerate` to pull the latest entries from `job_search_tracker.csv`.
+- **Auto-Regeneration:** Visit `http://127.0.0.1:8000/refresh` or start with `--regenerate` to pull the latest entries from the tracker store (Firestore, with the local cache as a fallback).
 - **Zero External Dependencies:** Built with vanilla HTML/CSS and inline SVGs.
 
 ## How `/apply` works

@@ -251,6 +251,90 @@ class TestPayloadResolution(unittest.TestCase):
             )
 
 
+class TestLabelInventory(unittest.TestCase):
+    """`--label` enumerates against what Gmail actually had last run."""
+
+    def write(self, payload) -> str:
+        import tempfile
+
+        handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(payload, handle)
+        handle.close()
+        return handle.name
+
+    def test_accepts_a_bare_list_and_normalizes_entries(self):
+        path = self.write([{"id": "Label_1", "name": "JOBS"}])
+        try:
+            labels = tracker.loadLabels(path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(labels, [{"id": "Label_1", "name": "JOBS", "type": "user"}])
+
+    def test_accepts_the_wrapped_shape_the_fetcher_writes(self):
+        path = self.write({"labels": [{"name": "JOBS/Applications", "type": "user"}]})
+        try:
+            labels = tracker.loadLabels(path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(labels[0]["name"], "JOBS/Applications")
+        self.assertEqual(labels[0]["id"], "")
+
+    def test_a_nameless_label_is_rejected(self):
+        path = self.write({"labels": [{"id": "Label_1"}]})
+        try:
+            with self.assertRaises(contract.ContractError):
+                tracker.loadLabels(path)
+        finally:
+            os.unlink(path)
+
+
+class TestArtifactPathResolution(unittest.TestCase):
+    """Backfill decides which imported locations have bytes worth uploading."""
+
+    root = pathlib.Path("/repo")
+
+    def test_repo_relative_local_path_is_anchored_at_the_root(self):
+        resolved = tracker.resolveArtifactPath(
+            {"localPath": "documents/a.pdf"}, self.root, includeDrive=True
+        )
+        self.assertEqual(resolved, self.root / "documents/a.pdf")
+
+    def test_absolute_local_path_is_left_alone(self):
+        resolved = tracker.resolveArtifactPath(
+            {"localPath": "/tmp/a.pdf"}, self.root, includeDrive=True
+        )
+        self.assertEqual(resolved, pathlib.Path("/tmp/a.pdf"))
+
+    def test_drive_path_is_used_when_the_drive_scan_is_on(self):
+        resolved = tracker.resolveArtifactPath(
+            {"driveUrl": "/Users/x/Library/CloudStorage/a.docx"}, self.root, includeDrive=True
+        )
+        self.assertEqual(
+            resolved, pathlib.Path("/Users/x/Library/CloudStorage/a.docx")
+        )
+
+    def test_drive_path_is_ignored_when_the_drive_scan_is_off(self):
+        self.assertIsNone(
+            tracker.resolveArtifactPath(
+                {"driveUrl": "/Users/x/a.docx"}, self.root, includeDrive=False
+            )
+        )
+
+    def test_google_doc_stub_is_never_uploaded(self):
+        # A .gdoc is a shortcut to a Google Doc; its bytes are not the document,
+        # so uploading it would store a dead pointer.
+        self.assertIsNone(
+            tracker.resolveArtifactPath({"driveUrl": "/Users/x/a.gdoc"}, self.root, includeDrive=True)
+        )
+
+    def test_external_url_has_no_local_file(self):
+        self.assertIsNone(
+            tracker.resolveArtifactPath(
+                {"externalUrl": "https://example.com/a.pdf"}, self.root, includeDrive=True
+            )
+        )
+
+
 class TestWriteGate(unittest.TestCase):
     def test_writes_are_refused_without_the_opt_in(self):
         saved = os.environ.pop("TRACKER_ALLOW_WRITES", None)
@@ -343,6 +427,37 @@ class TestCliAgainstEmulator(unittest.TestCase):
         code, _ = self.add()
         self.assertEqual(code, 2)
 
+    def test_backfill_dry_run_hashes_files_without_writing(self):
+        self.add()
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "cv.pdf"
+            source.write_bytes(b"%PDF-1.4 test")
+            artifactId = contract.newUuid()
+            reference = (
+                self.db.collection(client.APPLICATIONS)
+                .document(self.id)
+                .collection(client.ARTIFACTS)
+                .document(artifactId)
+            )
+            reference.set(
+                {
+                    "artifactId": artifactId,
+                    "kind": "artifact:cv",
+                    "filename": "cv.pdf",
+                    "createdAt": "2026-10-30T00:00:00+00:00",
+                    "source": "imported",
+                    "localPath": "cv.pdf",
+                }
+            )
+            code, result = runCli(["backfill", "--root", directory])
+        self.assertEqual(code, 0)
+        self.assertTrue(result["dryRun"])
+        self.assertGreaterEqual(result["candidates"], 1)
+        self.assertEqual(result["updated"], 0)
+        stored = reference.get().to_dict()
+        self.assertIsNone(stored.get("storage"))
+        self.assertIsNone(stored.get("sha256"))
+
     def test_dry_run_writes_nothing(self):
         path = writePayload({"id": self.id, "company": "Acme", "role": "Dry", "status": "applied"})
         try:
@@ -355,7 +470,7 @@ class TestCliAgainstEmulator(unittest.TestCase):
         self.assertFalse(fetched["found"])
 
     def test_dry_run_works_with_the_write_gate_off(self):
-        """Validation must be possible during the migration window."""
+        """A dry run must not need the write opt-in."""
         saved = os.environ.pop("TRACKER_ALLOW_WRITES", None)
         path = writePayload({"id": self.id, "company": "Acme", "role": "Dry", "status": "applied"})
         try:
@@ -401,6 +516,47 @@ class TestCliAgainstEmulator(unittest.TestCase):
         self.assertEqual(code, 0)
         _, fetched = runCli(["get", self.id])
         self.assertEqual(fetched["events"][0]["type"], "event:status-corrected")
+
+    def test_score_records_the_rating_and_keeps_the_previous_one(self):
+        self.add()
+        code, result = runCli(["score", self.id, "--fit", "73", "--note", "salary below target"])
+        self.assertEqual(code, 0)
+        self.assertEqual(result["fitRating"], 73)
+        self.assertEqual(result["previousFitRating"], 88)
+        _, fetched = runCli(["get", self.id])
+        self.assertEqual(fetched["application"]["fitRating"], 73)
+        scoreEvent = fetched["events"][-1]
+        self.assertEqual(scoreEvent["type"], "event:fit-recalculated")
+        self.assertEqual(scoreEvent["metadata"]["fitRating"], 73)
+        self.assertEqual(scoreEvent["metadata"]["previousFitRating"], 88)
+        # A score is not progress: the funnel must not move.
+        self.assertEqual(fetched["application"]["status"], "status:applied")
+
+    def test_score_rejects_a_rating_outside_the_range(self):
+        self.add()
+        self.assertEqual(runCli(["score", self.id, "--fit", "101"])[0], 2)
+        self.assertEqual(runCli(["score", self.id, "--fit", "-1"])[0], 2)
+        _, fetched = runCli(["get", self.id])
+        self.assertEqual(fetched["application"]["fitRating"], 88)
+        self.assertEqual(len(fetched["events"]), 0)
+
+    def test_score_dry_run_writes_nothing(self):
+        self.add()
+        code, result = runCli(["score", self.id, "--fit", "60", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertTrue(result["dryRun"])
+        _, fetched = runCli(["get", self.id])
+        self.assertEqual(fetched["application"]["fitRating"], 88)
+
+    def test_score_is_blocked_by_the_write_gate(self):
+        self.add()
+        saved = os.environ.pop("TRACKER_ALLOW_WRITES", None)
+        try:
+            code, _ = runCli(["score", self.id, "--fit", "60"])
+        finally:
+            if saved is not None:
+                os.environ["TRACKER_ALLOW_WRITES"] = saved
+        self.assertEqual(code, 2)
 
     def test_event_appends_without_moving_the_funnel(self):
         self.add()

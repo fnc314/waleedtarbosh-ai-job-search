@@ -286,7 +286,7 @@ These commands apply to the stock templates (moderncv CV, `cover.cls` cover lett
 
 ## 8. Application Tracking & Dashboards
 
-Track and visualize applications recorded in `job_search_tracker.csv`:
+Track and visualize applications recorded in the tracker store:
 
 ### Interactive Terminal TUI
 Run the keyboard-navigable terminal tracker:

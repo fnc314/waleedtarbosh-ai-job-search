@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs the deferred Gmail collector every 15 minutes.
+
+  `sync-due` only executes requests that a write already queued (see
+  `scripts/tasks.py`), so a run with nothing due is a single Firestore query.
+  It deliberately does nothing when `generated/gmail-inbox.json` is absent: the
+  fetch itself belongs to the agentic `/gmail-sync` step, and completing a
+  request that read no messages would silently consume the backlog.
+
+  Install:
+    cp deploy/launchd/dev.fnc314.tracker-collect.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.fnc314.tracker-collect.plist
+
+  Inspect:
+    launchctl print gui/$(id -u)/dev.fnc314.tracker-collect
+    tail -f ~/Library/Logs/job-tracker-collect.log
+
+  Remove:
+    launchctl bootout gui/$(id -u)/dev.fnc314.tracker-collect
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.fnc314.tracker-collect</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/fnc314/Work/Search/waleedtarbosh-ai-job-search/.venv/bin/python</string>
+        <string>/Users/fnc314/Work/Search/waleedtarbosh-ai-job-search/scripts/tracker.py</string>
+        <string>sync-due</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/fnc314/Work/Search/waleedtarbosh-ai-job-search</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- The key is read from disk, never embedded here. -->
+        <key>TRACKER_SA_KEY</key>
+        <string>/Users/fnc314/.config/job-tracker/sa.json</string>
+        <!-- The collector stages proposals and updates sync state, so it needs
+             the same opt-in as any other writer. -->
+        <key>TRACKER_ALLOW_WRITES</key>
+        <string>1</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/fnc314/Library/Logs/job-tracker-collect.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/fnc314/Library/Logs/job-tracker-collect.log</string>
+</dict>
+</plist>

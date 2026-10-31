@@ -747,6 +747,71 @@ def commandEvent(args) -> int:
     return EXIT_OK
 
 
+def commandScore(args) -> int:
+    """Record a recalculated fit rating.
+
+    The score is an input, not something the store can derive: it comes from the
+    evaluation rubric, which a human or the `/apply` agent runs. What this
+    command guarantees is that the change is *recorded* — the event log keeps
+    the previous value, so a later reader can see that a rating moved and from
+    what, instead of finding a number with no provenance.
+    """
+    if not 0 <= args.fit <= 100:
+        raise contract.ContractError(f"fit must be 0-100, got {args.fit}")
+
+    db = client.getDb()
+    reference = db.collection(client.APPLICATIONS).document(args.id)
+    snapshot = reference.get()
+    if not snapshot.exists:
+        raise contract.ContractError(f"no such application: {args.id}")
+    application = contract.fromFirestore(snapshot.to_dict())
+    previous = application.get("fitRating")
+
+    event = eventsModule.buildEvent(
+        "event:fit-recalculated",
+        date=args.date,
+        note=args.note,
+        actor="actor:user",
+        metadata={"fitRating": args.fit, "previousFitRating": previous},
+    )
+
+    if args.dry_run:
+        emit(
+            {
+                "dryRun": True,
+                "event": event,
+                "fitRating": args.fit,
+                "previousFitRating": previous,
+            }
+        )
+        return EXIT_OK
+
+    client.assertWritesAllowed("a fit recalculation")
+    stored = eventsModule.readEvents(db, args.id)
+    stored.append(event)
+    projected = render.project(application, stored)
+    projected["fitRating"] = args.fit
+    projected["updatedAt"] = eventsModule.nowIso()
+
+    batch = db.batch()
+    batch.set(reference, contract.toFirestore(projected), merge=True)
+    batch.set(
+        reference.collection(client.EVENTS).document(event["eventId"]),
+        contract.toFirestore(event),
+    )
+    batch.commit()
+    emit(
+        {
+            "ok": True,
+            "id": args.id,
+            "eventId": event["eventId"],
+            "fitRating": args.fit,
+            "previousFitRating": previous,
+        }
+    )
+    return EXIT_OK
+
+
 def enqueueCollectionQuietly(db, applicationIds, *, hours: float):
     """A deferred Gmail run must never turn a successful write into a failure."""
     try:
@@ -855,6 +920,132 @@ def commandArtifact(args) -> int:
         }
     )
     return EXIT_OK
+
+
+def resolveArtifactPath(artifact: dict, root: pathlib.Path, includeDrive: bool) -> pathlib.Path | None:
+    """Find the local file an imported artifact points at, if there is one.
+
+    The import kept three location styles: repo-relative `localPath`, an absolute
+    Drive-mount `driveUrl`, and an `externalUrl` that has no local file at all.
+    Google Docs stubs (`.gdoc`) are pointers, not documents - uploading one would
+    store a shortcut and lose the content - so they are skipped.
+    """
+    localPath = artifact.get("localPath")
+    if localPath:
+        candidate = pathlib.Path(localPath)
+        return candidate if candidate.is_absolute() else root / candidate
+    if not includeDrive:
+        return None
+    drivePath = artifact.get("driveUrl")
+    if not drivePath:
+        return None
+    candidate = pathlib.Path(drivePath).expanduser()
+    if candidate.suffix.lower() == ".gdoc":
+        return None
+    return candidate
+
+
+def commandBackfill(args) -> int:
+    """Add `storage`, `sha256`, `size`, and `contentType` to imported artifacts.
+
+    The import created artifact records with a location but no content facts, so
+    nothing could detect a replaced file or fetch the bytes from anywhere but
+    this laptop. This fills those fields in place: it never creates, renames, or
+    deletes an artifact, because doing so would present re-discovered files as
+    newly added ones in an append-only history.
+    """
+    db = client.getDb()
+    root = pathlib.Path(args.root).expanduser().resolve() if args.root else SCRIPT_DIR.parent
+    includeDrive = not args.local_only
+    if not args.dry_run:
+        client.assertWritesAllowed("an artifact backfill")
+        bucket = client.getBucket()
+
+    updated = 0
+    uploaded = 0
+    reused = 0
+    skipped = []
+    failed = []
+    processed = 0
+
+    for applicationDocument in db.collection(client.APPLICATIONS).stream():
+        applicationId = applicationDocument.id
+        for artifactDocument in applicationDocument.reference.collection(
+            client.ARTIFACTS
+        ).stream():
+            if args.limit and processed >= args.limit:
+                break
+            artifact = artifactDocument.to_dict()
+            path = resolveArtifactPath(artifact, root, includeDrive)
+            if path is None:
+                skipped.append(
+                    {
+                        "applicationId": applicationId,
+                        "filename": artifact.get("filename"),
+                        "reason": "no local file (externalUrl or .gdoc stub)",
+                    }
+                )
+                continue
+            if not path.exists():
+                skipped.append(
+                    {
+                        "applicationId": applicationId,
+                        "filename": artifact.get("filename"),
+                        "reason": f"missing on disk: {path}",
+                    }
+                )
+                continue
+            processed += 1
+            try:
+                described = artifactsModule.describe(path)
+                if args.dry_run:
+                    continue
+                storage, wasUploaded = artifactsModule.ensureUpload(
+                    bucket,
+                    applicationId=applicationId,
+                    kind=artifact["kind"],
+                    path=path,
+                    sha256=described["sha256"],
+                    size=described["size"],
+                )
+            except (artifactsModule.ArtifactError, contract.ContractError, OSError) as error:
+                failed.append(
+                    {
+                        "applicationId": applicationId,
+                        "filename": artifact.get("filename"),
+                        "error": str(error),
+                    }
+                )
+                continue
+            artifactDocument.reference.set(
+                {
+                    "storage": storage,
+                    "sha256": described["sha256"],
+                    "size": described["size"],
+                    "contentType": described["contentType"],
+                },
+                merge=True,
+            )
+            updated += 1
+            uploaded += 1 if wasUploaded else 0
+            reused += 0 if wasUploaded else 1
+        if args.limit and processed >= args.limit:
+            break
+
+    emit(
+        {
+            "dryRun": bool(args.dry_run),
+            "root": str(root),
+            "includeDrive": includeDrive,
+            "candidates": processed,
+            "updated": updated,
+            "uploaded": uploaded,
+            "reused": reused,
+            "skipped": skipped,
+            "failed": failed,
+        }
+    )
+    return EXIT_ERROR if failed else EXIT_OK
 
 
 def commandBulk(args) -> int:
@@ -1181,7 +1372,14 @@ def commandProposals(args) -> int:
         return EXIT_OK
     if args.proposalsCommand == "approve":
         client.assertWritesAllowed("approved proposal changes")
-        emit({"ok": True, **proposalsModule.approve(db, args.id, note=args.note)})
+        only = None
+        if getattr(args, "only", None):
+            only = {
+                int(part)
+                for part in str(args.only).replace(" ", "").split(",")
+                if part
+            }
+        emit({"ok": True, **proposalsModule.approve(db, args.id, note=args.note, only=only)})
         return EXIT_OK
     if args.proposalsCommand == "reject":
         emit({"ok": True, **proposalsModule.reject(db, args.id, reason=args.reason)})
@@ -1224,12 +1422,30 @@ def collectOnce(db, *, inboxPath: str | None, trigger: str, dryRun: bool) -> dic
             "reason": "no inbox payload; fetching is delegated to the Composio-backed /gmail-sync",
             "inbox": source["path"],
         }
+    # Re-fetching the same window must not re-propose the same mail. The
+    # processed set lives beside the collector's watermark in meta/sync, not in
+    # a second local file, so a fresh machine inherits it.
+    snapshot = db.collection(client.META).document(client.META_SYNC).get()
+    processed = set()
+    if snapshot.exists:
+        processed = set(
+            ((snapshot.to_dict() or {}).get("gmail") or {}).get("processedMessageIds") or []
+        )
+    alreadyProcessed = sum(
+        1 for message in messages if str(message.get("messageId")) in processed
+    )
+    messages = [message for message in messages if str(message.get("messageId")) not in processed]
     applications = {
         snapshot.id: contract.fromFirestore(snapshot.to_dict())
         for snapshot in db.collection(client.APPLICATIONS).stream()
     }
     if not messages:
-        return {"staged": False, "reason": "inbox payload is empty", "messages": 0}
+        return {
+            "staged": False,
+            "reason": "no new messages",
+            "messages": 0,
+            "alreadyProcessed": alreadyProcessed,
+        }
     proposal = proposalsModule.buildProposal(
         messages,
         applications,
@@ -1242,10 +1458,14 @@ def collectOnce(db, *, inboxPath: str | None, trigger: str, dryRun: bool) -> dic
     if not proposal["changes"] and not proposal["unmatched"]:
         return {"staged": False, "reason": "no messages to stage"}
     result = proposalsModule.stage(db, proposal)
+    # Mark every examined message, not only the ones that produced a change.
+    # A scheduled fetch runs whether or not a human is watching; re-examining
+    # the same unmatched mail every 12 hours would stage the same noise forever.
+    # The review table already records why a message went unmatched.
     messageIds = [
-        change["sourceEmail"]["messageId"]
-        for change in proposal["changes"]
-        if change.get("sourceEmail")
+        str(message.get("messageId"))
+        for message in messages
+        if message.get("messageId")
     ]
     from google.cloud import firestore
 
@@ -1259,12 +1479,62 @@ def collectOnce(db, *, inboxPath: str | None, trigger: str, dryRun: bool) -> dic
         },
         merge=True,
     )
-    return {"staged": True, **result}
+    return {"staged": True, "alreadyProcessed": alreadyProcessed, **result}
+
+
+def loadLabels(path: str) -> list[dict]:
+    """Read the label inventory the fetch step discovered.
+
+    Gmail labels are user state, so the set of valid values is whatever existed
+    at the last sync — not a list baked into this repository. `collect` stores
+    the inventory in `meta/sync`, and `tracker.py labels` reads it back so
+    `/gmail-sync --label` can reject a typo with the actual choices.
+    """
+    payloadPath = pathlib.Path(path).expanduser()
+    if not payloadPath.exists():
+        raise contract.ContractError(f"labels file not found: {payloadPath}")
+    value = json.loads(payloadPath.read_text(encoding="utf-8"))
+    if isinstance(value, dict):
+        value = value.get("labels")
+    if not isinstance(value, list):
+        raise contract.ContractError(f"{payloadPath} must be a list of labels or {{labels: [...]}}")
+    labels = []
+    for entry in value:
+        if not isinstance(entry, dict) or not entry.get("name"):
+            raise contract.ContractError(f"{payloadPath} has a label without a name")
+        labels.append(
+            {
+                "id": str(entry.get("id") or ""),
+                "name": str(entry["name"]),
+                "type": str(entry.get("type") or "user"),
+            }
+        )
+    return labels
+
+
+def commandLabels(args) -> int:
+    db = client.getDb()
+    snapshot = db.collection(client.META).document(client.META_SYNC).get()
+    labels = []
+    if snapshot.exists:
+        labels = ((snapshot.to_dict() or {}).get("gmail") or {}).get("labels") or []
+    emit({"count": len(labels), "labels": labels})
+    return EXIT_OK
 
 
 def commandCollect(args) -> int:
     db = client.getDb()
+    labels = loadLabels(args.labels) if args.labels else None
+    if not args.dry_run:
+        client.assertWritesAllowed("a staged proposal")
     result = collectOnce(db, inboxPath=args.json, trigger=args.trigger, dryRun=args.dry_run)
+    if labels is not None:
+        if not args.dry_run:
+            db.collection(client.META).document(client.META_SYNC).set(
+                {"gmail": {"labels": labels, "labelsSeenAt": eventsModule.nowIso()}},
+                merge=True,
+            )
+        result["labels"] = len(labels)
     emit({"ok": True, **result})
     return EXIT_OK
 
@@ -1276,6 +1546,23 @@ def commandSyncDue(args) -> int:
         emit({"dryRun": True, "due": len(requests), "requests": requests})
         return EXIT_OK
 
+    # An unfetched inbox is not a failed sync: there is simply nothing to read
+    # yet. Leave the requests pending instead of claiming and completing them,
+    # or the 2-hour backlog would be consumed by a run that checked nothing.
+    _, source = loadInbox(args.json)
+    if not source.get("found"):
+        emit(
+            {
+                "ok": True,
+                "due": len(requests),
+                "processed": 0,
+                "skipped": "no inbox payload",
+                "inbox": source["path"],
+            }
+        )
+        return EXIT_OK
+
+    client.assertWritesAllowed("a due sync request")
     results = []
     for request in requests:
         claimed = tasks.claim(db, request["requestId"])
@@ -1355,6 +1642,14 @@ def buildParser() -> argparse.ArgumentParser:
     status.add_argument("--dry-run", action="store_true")
     status.set_defaults(handler=commandStatus)
 
+    score = subparsers.add_parser("score", help="record a recalculated fit rating")
+    score.add_argument("id")
+    score.add_argument("--fit", type=int, required=True, help="integer 0-100")
+    score.add_argument("--date", help="ISO date the score was decided (default: now)")
+    score.add_argument("--note", help="what changed in the evaluation")
+    score.add_argument("--dry-run", action="store_true")
+    score.set_defaults(handler=commandScore)
+
     event = subparsers.add_parser("event", help="append a timeline event")
     event.add_argument("id")
     event.add_argument("--type", required=True, help="an event:* value")
@@ -1373,6 +1668,17 @@ def buildParser() -> argparse.ArgumentParser:
     artifact.add_argument("--dry-run", action="store_true")
     artifact.set_defaults(handler=commandArtifact)
 
+    backfill = subparsers.add_parser(
+        "backfill", help="add hashes and storage to already-registered artifacts"
+    )
+    backfill.add_argument("--apply", dest="dry_run", action="store_false",
+                          help="write the updates (default: report only)")
+    backfill.add_argument("--local-only", action="store_true",
+                          help="skip Drive-mount files and only hash repo files")
+    backfill.add_argument("--root", help="repo root for relative localPath values")
+    backfill.add_argument("--limit", type=int, help="stop after N files")
+    backfill.set_defaults(handler=commandBackfill, dry_run=True)
+
     bulk = subparsers.add_parser("bulk", help="add many applications from one JSON file")
     bulk.add_argument("--json", required=True, help="a JSON array, or {applications: [...]}")
     bulk.add_argument("--allow-partial", action="store_true", help="write the valid rows")
@@ -1380,7 +1686,7 @@ def buildParser() -> argparse.ArgumentParser:
     bulk.set_defaults(handler=commandBulk)
 
     importing = subparsers.add_parser("import", help="one-shot import of the legacy CSV")
-    importing.add_argument("--csv", required=True, help="path to job_search_tracker.csv")
+    importing.add_argument("--csv", required=True, help="path to a legacy tracker CSV (archive/job_search_tracker.csv for a re-import)")
     importing.add_argument("--dry-run", action="store_true", help="report only, never write")
     importing.add_argument(
         "--report",
@@ -1416,6 +1722,10 @@ def buildParser() -> argparse.ArgumentParser:
     proposalApprove = proposalSubs.add_parser("approve")
     proposalApprove.add_argument("id")
     proposalApprove.add_argument("--note", help="resolution text")
+    proposalApprove.add_argument(
+        "--only",
+        help="comma-separated 1-based change indexes to approve (default: all)",
+    )
     proposalApprove.set_defaults(handler=commandProposals)
     proposalReject = proposalSubs.add_parser("reject")
     proposalReject.add_argument("id")
@@ -1427,12 +1737,19 @@ def buildParser() -> argparse.ArgumentParser:
     collect = subparsers.add_parser("collect", help="stage proposals from fetched messages")
     collect.add_argument("--json", help="inbox payload (default: generated/gmail-inbox.json)")
     collect.add_argument(
+        "--labels",
+        help="JSON inventory of Gmail labels discovered by this fetch; stored in meta/sync",
+    )
+    collect.add_argument(
         "--trigger",
         default="trigger:manual",
         help="trigger:manual | trigger:cron | trigger:application-updated",
     )
     collect.add_argument("--dry-run", action="store_true")
     collect.set_defaults(handler=commandCollect)
+
+    labels = subparsers.add_parser("labels", help="show the Gmail labels seen at the last sync")
+    labels.set_defaults(handler=commandLabels)
 
     syncDue = subparsers.add_parser("sync-due", help="run due sync-requests")
     syncDue.add_argument("--json", help="inbox payload for every request")

@@ -75,8 +75,8 @@ documents/postings/**
 documents/interview/**
 !documents/**/.gitkeep
 
-# Personal job search tracking
-job_search_tracker.csv
+# Frozen pre-migration snapshot (see archive/README.md). Never a data source.
+archive/*.csv
 
 # Service-account credentials for the tracker store (scripts/tracker.py).
 # These grant read/write to the only authoritative copy of the application
@@ -124,9 +124,13 @@ upskill/*.md
 *.p12
 secrets/
 
-# Assistant & Agent runner local state, plugins, and caches
-.gemini/
-.qwen/
+# Assistant & Agent runner local state, plugins, and caches. The one exception
+# per directory is its instruction pointer, which belongs in git so the
+# "read from .agents/" rule travels with the repo.
+.gemini/*
+!.gemini/GEMINI.md
+.qwen/*
+!.qwen/QWEN.md
 .composio/
 .recalc_queue
 plugins/
@@ -147,7 +151,6 @@ google_job_posting.txt
 tekgence_detail.txt
 
 # Scratch, ad-hoc, and local helper scripts containing personal paths/data
-bulk_add_tracker.py
 cross_reference.py
 fetch_disney.py
 fetch_resume.py
@@ -156,7 +159,6 @@ fix_final.py
 fix_relocation.py
 generate_samples.py
 organize_docs.py
-update_state.py
 parse_html.py
 parse_html_stdin.py
 standardize_apps.py
