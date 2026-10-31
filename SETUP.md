@@ -16,13 +16,99 @@ You'll need an Anthropic API key or a Claude Pro/Team subscription. See the [Cla
 
 ### Python
 
-Python 3.10+ is required for the salary lookup tool. Check with:
+The tracker store (`scripts/tracker.py`) runs the only copy of your application record, so the interpreter is pinned: this repo targets **Python 3.15.2**, declared in `mise.toml` and `.github/workflows/ci.yml`. Install it with [mise](https://mise.jdx.dev/):
 
 ```bash
-python3 --version
+curl https://mise.run | sh
+mise install          # reads mise.toml, installs Python 3.15.2
+python3 --version     # 3.15.2
 ```
 
+The salary lookup tool and the dashboards also work on Python 3.10+, but the tracker itself should run on the pinned version.
+
+Create a virtual environment in the repo root and install the tracker's runtime dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-tracker.txt
+```
+
+PowerShell users can substitute `.venv\Scripts\pip`.
+
 On Windows, `py --version` is often the most reliable check. If your system exposes Python as `python` instead of `python3`, use `python` in the commands below.
+
+### Google Cloud SDK (Firestore, Storage, Sheets)
+
+The tracker stores applications, events, and artifacts in Google Cloud. You need the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud`) and a Google Cloud project with billing enabled (Firestore and Cloud Storage both require the Blaze plan).
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+```
+
+Then provision the services the tracker uses. Replace `YOUR_PROJECT_ID` and `YOUR_BUCKET`:
+
+```bash
+# Firestore (native mode) and the APIs the tracker calls
+gcloud services enable firestore.googleapis.com storage.googleapis.com \
+  sheets.googleapis.com drive.googleapis.com \
+  --project YOUR_PROJECT_ID
+
+# Artifact bucket (uniform access, no public objects)
+gcloud storage buckets create gs://YOUR_BUCKET \
+  --project YOUR_PROJECT_ID --location=US \
+  --uniform-bucket-level-access
+
+# Service account for the CLI
+gcloud iam service-accounts create tracker --project YOUR_PROJECT_ID \
+  --display-name="Job tracker CLI"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:tracker@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+gcloud storage buckets add-iam-policy-binding gs://YOUR_BUCKET \
+  --member="serviceAccount:tracker@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+
+# Key on disk, outside the repo
+mkdir -p ~/.config/job-tracker
+gcloud iam service-accounts keys create ~/.config/job-tracker/sa.json \
+  --iam-account=tracker@YOUR_PROJECT_ID.iam.gserviceaccount.com
+chmod 600 ~/.config/job-tracker/sa.json
+```
+
+Create the Firestore database in native mode once (its location is permanent):
+
+```bash
+gcloud firestore databases create --project YOUR_PROJECT_ID --location=nam5 --type=firestore-native
+```
+
+Finally copy `.env.example` to `.env.local` and fill it in `TRACKER_SA_KEY` (default `~/.config/job-tracker/sa.json`), `TRACKER_ALLOW_WRITES=1`, `GOOGLE_API_KEY`, and `TRACKER_SHEET_ID`. `.env.local` is gitignored and mode `600`; mise loads it automatically via `[env] _.file`.
+
+> `firebase.json` and `.firebaserc` pin the maintenance project `job-search-fnc314-dev`. For your own fork, change `.firebaserc` to your project id before deploying rules or indexes.
+
+### Firebase CLI and Java (emulator and security rules)
+
+Firebase CLI deploys the Firestore security rules and indexes in this repo, and runs the emulator-backed tests. The emulator requires Java 11 or newer.
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy --only firestore --project YOUR_PROJECT_ID
+```
+
+`firebase.json` points at `firestore.rules` (deny-all for clients; the service account bypasses rules) and `firestore.indexes.json`.
+
+### Composio CLI (Gmail sync and portal tools)
+
+The `/gmail-sync` flow, the scheduled Gmail fetch, and several portal-search skills talk to Composio:
+
+```bash
+curl -fsSL https://composio.dev/install | bash
+composio login
+composio link gmail          # one-time OAuth consent for the mailbox
+```
+
+The CLI keeps its own login (`~/.composio/`), so `COMPOSIO_API_KEY` in `.env.local` is optional for CLI-driven flows. Headless runs (including `launchd`) use the CLI login, which is why no cloud secret is required.
 
 ### Bun (for job search tools)
 
@@ -286,22 +372,82 @@ These commands apply to the stock templates (moderncv CV, `cover.cls` cover lett
 
 ## 8. Application Tracking & Dashboards
 
-Track and visualize applications recorded in the tracker store:
+Applications live in **Firestore**, not in a CSV. Every write goes through `scripts/tracker.py`; the Google Sheet and the dashboards are generated views. See `.agents/skills/job-tracker/SKILL.md` for the invariants.
+
+### Initialize the store
+
+Once the project, service account, and `.env.local` from step 1 exist:
+
+```bash
+# Validate the contract, then seed meta/schema
+.venv/bin/python scripts/tracker.py check
+.venv/bin/python scripts/tracker.py seed
+
+# Optional: import an existing CSV (idempotent; re-running skips imported rows)
+.venv/bin/python scripts/tracker.py import --csv path/to/job_search_tracker.csv --dry-run
+.venv/bin/python scripts/tracker.py import --csv path/to/job_search_tracker.csv
+```
+
+Writes are refused unless `TRACKER_ALLOW_WRITES=1` is set in the environment; `.env.local` provides it, and `mise` loads that file for you.
+
+### Google Sheet view
+
+Create a spreadsheet, share it with the service-account email as **Editor**, put its id in `TRACKER_SHEET_ID`, then:
+
+```bash
+.venv/bin/python scripts/tracker.py sheet --sync
+```
+
+The three tabs (Applications, Events, Summary) are replaced wholesale. Never hand-edit the Sheet: fix the record and re-sync.
 
 ### Interactive Terminal TUI
 Run the keyboard-navigable terminal tracker:
 ```bash
-python3 ui/terminal/tracker_tui.py
+.venv/bin/python ui/terminal/tracker_tui.py
 ```
 Use `j`/`k` to navigate, `Enter` to view full dossiers and outreach templates, and `1`–`5` to sort columns. Layout preferences can be tweaked in `ui/terminal/tui_config.json`.
 
 ### Web Dashboard & Server
 Launch the local web dashboard server (auto-opens in your browser):
 ```bash
-python3 ui/web/application-dashboard-server.py
+.venv/bin/python ui/web/application-dashboard-server.py
 ```
 - Open `http://127.0.0.1:8000` to review status KPIs, interview conversion funnel, and sector distributions.
-- Visit `http://127.0.0.1:8000/refresh` or run `python3 scripts/generate_report.py` to regenerate the HTML report from the tracker.
+- Visit `http://127.0.0.1:8000/refresh` or run `.venv/bin/python scripts/generate_report.py` to regenerate the HTML report from the tracker.
+
+### Gmail sync and the scheduled fetch (macOS)
+
+`/gmail-sync` fetches mail, stages a **proposal**, and waits for your review. The fetch half also runs unattended:
+
+```bash
+# one manual run
+./scripts/gmail-fetch.sh
+
+# install the two launchd agents (fetch every 12h, sync-due every 15min)
+cp deploy/launchd/dev.fnc314.tracker-gmail-fetch.plist ~/Library/LaunchAgents/
+cp deploy/launchd/dev.fnc314.tracker-collect.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.fnc314.tracker-gmail-fetch.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.fnc314.tracker-collect.plist
+```
+
+Both agents read the service-account key from disk and reuse your Composio CLI login; nothing is embedded in the plists. Logs: `~/Library/Logs/job-tracker-gmail-fetch.log` and `~/Library/Logs/job-tracker-collect.log`. Review what was staged with:
+
+```bash
+.venv/bin/python scripts/tracker.py proposals list --state proposal:pending
+```
+
+The fetcher pages 50 messages at a time because Composio rejects larger single responses, and it never approves a proposal itself.
+
+### Tests
+
+```bash
+# offline suite
+.venv/bin/python -m unittest discover -s tests
+
+# full suite incl. Firestore emulator (Java required)
+firebase emulators:exec --only firestore --project job-search-tracker-test \
+  ".venv/bin/python -m unittest discover -s tests"
+```
 
 ## 9. Pulling upstream updates into your fork
 
@@ -317,6 +463,24 @@ Upstream keeps improving the methodology files your fork has personalized, so pl
    ```
    It compares the `framework_version` markers in your framework files against upstream and lists exactly which methodology files changed, with the diff command for each.
 3. **Merge normally.** `git merge upstream/master` (or `git pull`) three-way-merges upstream's edits around your personalization; because methodology edits rarely touch the lines `/setup` filled in, most updates land cleanly. A conflict in a personalized file is a *feature*, not a failure — it means upstream changed methodology in a section you customized, and the version marker plus its changelog commit tell you why. Resolve by keeping your data and adopting the methodology change around it.
+
+### Tracker writes are refused
+`scripts/tracker.py` exits with a write-gate error unless `TRACKER_ALLOW_WRITES=1` is in the environment. `.env.local` supplies it; check that you are running from the repo root (where `mise.toml` applies) or export it for the command.
+
+### Firestore permission denied / "Could not automatically determine credentials"
+The service-account key is missing or unreadable. Confirm `TRACKER_SA_KEY` points at an existing file (default `~/.config/job-tracker/sa.json`, mode `600`) and that the service account has `roles/datastore.user` on the project and `roles/storage.objectAdmin` on the artifact bucket.
+
+### `firebase emulators` fails to start
+The Firestore emulator needs Java 11+. Check `java -version`; on macOS `brew install openjdk` and follow the `brew` caveats to put it on `PATH`.
+
+### `The tool response payload is too large` during Gmail sync
+Composio caps a single Gmail response at roughly 50 full messages. `scripts/gmail_fetch.py` pages in batches of 50 for this reason; if you call `GMAIL_FETCH_EMAILS` yourself, keep `max_results` at 50 or use `page_token`.
+
+### `launchd` job exits non-zero or finds no `composio`
+Agents start with a minimal `PATH` and do not read your shell profile. `scripts/gmail-fetch.sh` adds `~/.local/bin` and common Homebrew paths and locates `composio` explicitly; if the CLI lives elsewhere, set `COMPOSIO_BIN` in the plist's `EnvironmentVariables`. Inspect `launchctl print gui/$(id -u)/<label>` and the log in `~/Library/Logs/`.
+
+### A leaked key was committed
+Removing a secret from the latest commit does not remove it from history. Rotate/revoke the key in Google Cloud first, then rewrite the history (for example `git filter-repo --replace-text replacements.txt`) and force-push. This repo's own history was scrubbed this way on 2026-10-31.
 
 ## Troubleshooting
 

@@ -649,7 +649,7 @@ regenerates the original file. The CSV is never modified in place until Phase 10
 | Composio cannot manage Firestore/GCS/schema | it was never intended to; the service account covers all of it. Composio is used only for Gmail |
 | A future agent bypasses the CLI | `security_guards.py` fails CI on any new CSV write path; `SKILL.md` states the invariant |
 | Cloud secrets sprawl | no cloud secrets in the default path; the collector runs under `launchd` with the local key |
-| `mise.toml` held a plaintext `GOOGLE_API_KEY` | **closed 2026-10-31:** moved to `.env.local` (gitignored), which mise loads via `[env] _.file`; `.env.example` documents the variables. The leaked key was **revoked in Google Cloud** and replaced in project `job-search-fnc314-dev`. History was rewritten with `git-filter-repo --replace-text` and verified: no `AIza` string exists in any blob or commit. |
+| `mise.toml` held a plaintext `GOOGLE_API_KEY` | **closed 2026-10-31:** moved to `.env.local` (gitignored), which mise loads via `[env] _.file`; `.env.example` documents the variables. The leaked key was **revoked in Google Cloud** and replaced in project `job-search-fnc314-dev`. History was rewritten with `git-filter-repo --replace-text` and verified: no Google API key string exists in any blob or commit. |
 
 ## 15. Decision log
 

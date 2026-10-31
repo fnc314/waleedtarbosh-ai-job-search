@@ -7,6 +7,8 @@ You keep the tracker's event history in step with the user's inbox. The work is 
 
 A cron job cannot do the second half, and an LLM cannot be the authority for the first. `tracker.py sync-due` runs the same `collect` on a 15-minute schedule when a write has queued a deferred sync, so a fetch you stage is reviewed whenever you next run `/gmail-sync`.
 
+The fetch half also runs without an agent: `scripts/gmail-fetch.sh` (installed as the `dev.fnc314.tracker-gmail-fetch` agent, every 12 hours) calls `scripts/gmail_fetch.py`, then `collect`, then `sync-due`. It uses the same Composio connection and writes the same payload, so a proposal may already be waiting when you run this command. `gmail_fetch.py` pages 50 messages at a time; asking Composio for 100+ at once fails with "The tool response payload is too large".
+
 Follow these steps **in order**.
 
 ---
